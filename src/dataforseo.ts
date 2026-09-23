@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { OperationError } from "./errors.js";
+import type { Project } from "./project.js";
 
 const endpoint = "https://api.dataforseo.com/v3/dataforseo_labs/google/keyword_overview/live";
 
@@ -28,7 +30,7 @@ const responseSchema = z.object({
   })).optional(),
 });
 
-export type Project = { domain: string; locationCode: number; languageCode: string };
+const providerError = (message: string, cause?: unknown) => new OperationError("provider", message, { cause });
 
 export async function keywordMetrics(
   project: Project,
@@ -36,26 +38,37 @@ export async function keywordMetrics(
   apiKey: string,
   fetcher: typeof fetch = fetch,
 ) {
-  const response = await fetcher(endpoint, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify([{ keywords, location_code: project.locationCode, language_code: project.languageCode, include_clickstream_data: false }]),
-    signal: AbortSignal.timeout(60_000),
-  });
-  if (!response.ok) throw new Error(`DataForSEO HTTP ${response.status}`);
+  let response: Response;
+  try {
+    response = await fetcher(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify([{ keywords, location_code: project.locationCode, language_code: project.languageCode, include_clickstream_data: false }]),
+      signal: AbortSignal.timeout(60_000),
+    });
+  } catch (error) {
+    throw providerError(`DataForSEO request failed: ${error instanceof Error ? error.message : String(error)}`, error);
+  }
+  if (response.status === 401) throw new OperationError("credentials", "DataForSEO rejected DATAFORSEO_API_KEY (HTTP 401)");
+  if (!response.ok) throw providerError(`DataForSEO HTTP ${response.status}`);
 
-  const raw: unknown = await response.json();
+  let raw: unknown;
+  try {
+    raw = await response.json();
+  } catch (error) {
+    throw providerError("DataForSEO returned a response that is not JSON", error);
+  }
   const parsed = responseSchema.safeParse(raw);
-  if (!parsed.success) throw new Error("Unexpected DataForSEO keyword overview response shape");
+  if (!parsed.success) throw providerError("Unexpected DataForSEO keyword overview response shape");
   const body = parsed.data;
-  if (body.status_code !== 20000) throw new Error(`DataForSEO ${body.status_code}: ${body.status_message ?? "request failed"}`);
+  if (body.status_code !== 20000) throw providerError(`DataForSEO ${body.status_code}: ${body.status_message ?? "request failed"}`);
   const task = body.tasks?.[0];
-  if (!task) throw new Error("DataForSEO response missing task");
-  if (task.status_code !== 20000) throw new Error(`DataForSEO task ${task.status_code}: ${task.status_message ?? "failed"}${task.cost != null ? ` (charged $${task.cost})` : ""}`);
-  if (task.cost == null || !task.path) throw new Error("DataForSEO task missing cost/path");
+  if (!task) throw providerError("DataForSEO response missing task");
+  if (task.status_code !== 20000) throw providerError(`DataForSEO task ${task.status_code}: ${task.status_message ?? "failed"}${task.cost != null ? ` (charged $${task.cost})` : ""}`);
+  if (task.cost == null || !task.path) throw providerError("DataForSEO task missing cost/path");
 
   const rows = (task.result?.[0]?.items ?? [])
     .filter((item) => item.keyword != null)
