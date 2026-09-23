@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { domainOverview, rankedKeywords, serpCompetitors } from "../src/domain.js";
+import { domainOverview, domainPages, rankedKeywords, serpCompetitors } from "../src/domain.js";
 import { OperationError } from "../src/errors.js";
 import { runCli, withFetch, withProject } from "./helpers.js";
 
@@ -121,5 +121,41 @@ test("domain, ranked and competitors commands validate options with the input ex
       const result = runCli(root, args, { env });
       assert.equal(result.status, 2, `${args.join(" ")}: ${result.stderr}`);
     }
+  });
+});
+
+test("domain pages sends OpenSEO's page filters and paging, maps pages and caches the page", async () => {
+  await withCache(async (cacheDirectory) => {
+    const input = {
+      target: "https://example.com/blog", scope: "subfolder" as const, sortMode: "keywords" as const, sortOrder: "desc" as const, page: 2, pageSize: 50 as const,
+      filters: { include: "guide", exclude: "tag", minTraffic: 10, maxVol: 500 }, cacheDirectory,
+    };
+    const live = await withFetch(
+      () => labs([{ page_address: "https://example.com/blog/seo-guide?ref=1", metrics: { organic: { etv: 120.6, count: 42.4 } } }, { page_address: null }], { total_count: 51 }),
+      () => domainPages(market, input),
+    );
+    assert.equal(live.requests[0].url, `${api}/relevant_pages/live`);
+    const body = (live.requests[0].body as Array<Record<string, unknown>>)[0];
+    assert.deepEqual([body.target, body.limit, body.offset, body.order_by], ["example.com", 50, 50, ["metrics.organic.count,desc"]]);
+    assert.deepEqual((body.filters as unknown[]).slice(1), [
+      "and", ["page_address", "ilike", "%guide%"],
+      "and", ["page_address", "not_ilike", "%tag%"],
+      "and", ["metrics.organic.etv", ">=", 10],
+      "and", ["metrics.organic.count", "<=", 500],
+    ], "user filters follow the subfolder scope group");
+    assert.deepEqual(live.result.pages, [{ page: "https://example.com/blog/seo-guide?ref=1", relativePath: "/blog/seo-guide?ref=1", organicTraffic: 121, keywords: 42 }]);
+    assert.deepEqual([live.result.totalCount, live.result.hasMore, live.result.cached], [51, false, false]);
+
+    const again = await withFetch(() => assert.fail("a cached page must not call DataForSEO"), () => domainPages(market, input));
+    assert.deepEqual([again.result.cached, again.result.costUsd], [true, 0]);
+
+    await withFetch(() => assert.fail("must not call DataForSEO"), () => assert.rejects(
+      domainPages(market, { ...input, filters: { include: "a,b,c,d,e", minTraffic: 1 } }),
+      /Too many filter conditions \(10 of 8 max\)/,
+    ));
+    await withFetch(() => labs([{ page_address: 42 }]), () => assert.rejects(
+      domainPages(market, { ...input, page: 3 }),
+      (error: unknown) => error instanceof OperationError && error.kind === "provider" && /relevant_pages returned an invalid response shape/.test(error.message),
+    ));
   });
 });

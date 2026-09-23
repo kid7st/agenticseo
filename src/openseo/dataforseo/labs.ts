@@ -368,6 +368,49 @@ export async function fetchKeywordIdeas(input: {
   };
 }
 
+const relevantPagesItemSchema = z.looseObject({
+  page_address: z.string().nullable().optional(),
+  metrics: domainMetricsItemSchema.shape.metrics,
+});
+
+type RelevantPagesPage = {
+  items: RelevantPagesItem[];
+  totalCount: number | null;
+};
+
+export async function fetchRelevantPages(input: {
+  target: string;
+  locationCode: number;
+  languageCode: string;
+  limit: number;
+  offset?: number;
+  orderBy?: string[];
+  filters?: unknown[];
+}): Promise<DataforseoApiResponse<RelevantPagesPage>> {
+  const response = await dataforseoPost<DataforseoItemsTask<RelevantPagesItem>>(
+    "/v3/dataforseo_labs/google/relevant_pages/live",
+    [
+      {
+        target: input.target,
+        location_code: input.locationCode,
+        language_code: input.languageCode,
+        limit: input.limit,
+        offset: input.offset,
+        order_by: input.orderBy,
+        filters: input.filters,
+      },
+    ],
+  );
+  const task = assertOk(response);
+  return {
+    data: {
+      items: parseTaskItems("relevant_pages", task, relevantPagesItemSchema),
+      totalCount: task.result?.[0]?.total_count ?? null,
+    },
+    billing: buildTaskBilling(task),
+  };
+}
+
 export async function fetchKeywordOverview(input: {
   keywords: string[];
   locationCode: number;

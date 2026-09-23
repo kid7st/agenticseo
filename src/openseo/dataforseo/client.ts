@@ -17,6 +17,7 @@ import {
   fetchKeywordSuggestions,
   fetchRankedKeywords,
   fetchRelatedKeywords,
+  fetchRelevantPages,
   fetchSerpCompetitors,
 } from "./labs.js";
 import { fetchLiveSerp } from "./serp.js";
@@ -60,6 +61,7 @@ export function createDataforseoClient(ledger: ProviderCall[]) {
     domain: {
       rankOverview: meter(ledger, fetchDomainRankOverview),
       rankedKeywords: meter(ledger, fetchRankedKeywords),
+      relevantPages: meter(ledger, fetchRelevantPages),
     },
     serp: {
       live: meter(ledger, fetchLiveSerp),
