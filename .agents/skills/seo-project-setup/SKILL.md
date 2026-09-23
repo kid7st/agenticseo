@@ -7,7 +7,7 @@ description: Set up an AgenticSEO project for a website and record its goals, po
 
 Interview the user once about one website and store the durable answers in the project context, so later SEO tasks and other agents start from them instead of asking again. This is setup, not an audit; it makes no paid calls.
 
-1. Run `agenticseo context`. If it fails with exit code 2 because no project exists, ask for the site and target market and run `agenticseo init --domain DOMAIN --location LOCATION_CODE --language LANGUAGE_CODE` in the website's repository root. Use DataForSEO location codes; never guess the market.
+1. Run `agenticseo context`. If it fails with exit code 2 because no project exists, ask for the site and target market and run `agenticseo init --domain DOMAIN --location COUNTRY` (a two-letter country code such as `US`, or a DataForSEO location code; add `--language` only when the user targets a non-default language) in the website's repository root. Never guess the market.
 2. Show the user what is already recorded and which `missingSections` are empty. Confirm or correct existing entries rather than asking again.
 3. Ask in small batches, then write the answers to the `file` path from step 1 (`.agenticseo/context.json`). Write as the interview progresses, not all at the end:
    - `sections.business_overview`: what the business does, who it serves, markets and languages, and whether the site is new, established, migrating or recovering.

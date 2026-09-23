@@ -15,7 +15,7 @@ Use the installed `agenticseo` command. If it is not on PATH, tell the user how 
 
 ## Project context
 
-1. Run `agenticseo context` first and ground the research in it: the business, the goal, the market in `project.json`, and the competitors and key pages already recorded. If it exits with code 2 because no project exists, ask for the site and market and run `agenticseo init --domain DOMAIN --location LOCATION_CODE --language LANGUAGE_CODE`. Never guess the market.
+1. Run `agenticseo context` first and ground the research in it: the business, the goal, the market in `project.json`, and the competitors and key pages already recorded. If it exits with code 2 because no project exists, ask for the site and market and run `agenticseo init --domain DOMAIN --location COUNTRY` (a two-letter country code such as `US`, or a DataForSEO location code; add `--language` only when the user targets a non-default language). Never guess the market.
 2. This skill needs `sections.business_overview` and `sections.current_goal`. If either is empty, ask the user (or infer from the site and confirm) just enough to fill them in `.agenticseo/context.json`, then continue. Suggest `seo-project-setup` at the end for the rest.
 3. Before paying, check `researchLog`. If the same research ran within the last 30 days, reuse its evidence file and say so instead of buying it again.
 4. On finish, write back what is durable: a sharpened `current_goal`, competitors that kept appearing in the SERPs in `competitors`, pages the keywords should land on in `keyPages`, and one `researchLog` entry: `{ "entryDate": "<today from agenticseo context>", "summary": "Keyword research: <seeds>, <market>. Verdict: <conclusion>. Evidence: <paths>" }`. Run `agenticseo context` to validate.
@@ -26,6 +26,7 @@ Use the installed `agenticseo` command. If it is not on PATH, tell the user how 
 - `agenticseo keywords TERM...`: volume, difficulty, intent, CPC and competition for up to 700 known terms in one call. Use it to score a fixed candidate list. Terms with no data are listed in `missingKeywords`.
 - `agenticseo serp "QUERY" [--depth 10-100]`: live Google results for a query. Use it when intent is ambiguous or you need to see who ranks; keep checks few, since each is billed.
 - Add `--clickstream` to `research` or `keywords` only when the user wants refined volumes; it doubles the cost.
+- Add `--location COUNTRY [--language CODE]` to run one call in another country than the project's, for example to compare markets. Report which market each number comes from.
 
 Every result states `source`, date, market and `costUsd`, and points to an `evidence` file; read rows from that file (for example with `jq`) instead of rerunning a paid command. When `source` is `google_ads`, the market is not covered by DataForSEO Labs, so difficulty and intent are unavailable.
 

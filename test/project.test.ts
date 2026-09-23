@@ -3,15 +3,20 @@ import { access, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { OperationError } from "../src/errors.js";
+import { marketForCall } from "../src/market.js";
 import { runCli, withProject } from "./helpers.js";
 
-test("init canonicalizes the domain like OpenSEO and rejects bad input with the input exit code", async () => {
+test("init canonicalizes the domain and validates the market like OpenSEO, rejecting bad input with the input exit code", async () => {
   const root = await mkdtemp(join(tmpdir(), "agenticseo-"));
   try {
     for (const args of [
       ["init", "--domain", "my_site.com", "--location", "2840", "--language", "en"],
       ["init", "--domain", "example.por", "--location", "2840", "--language", "en"],
-      ["init", "--domain", "example.com", "--location", "US", "--language", "en"],
+      ["init", "--domain", "example.com", "--location", "1"],
+      ["init", "--domain", "example.com", "--location", "XX"],
+      ["init", "--domain", "example.com", "--location", "US", "--language", "ru"],
+      ["init", "--domain", "example.com", "--language", "en"],
       ["init", "--domain", "example.com", "--location", "2840", "--language", "en", "--extra"],
       ["unknown-command"],
     ]) {
@@ -19,10 +24,12 @@ test("init canonicalizes the domain like OpenSEO and rejects bad input with the 
       assert.equal(result.status, 2, `${args.join(" ")}: ${result.stderr}`);
     }
     await assert.rejects(access(join(root, ".agenticseo")), "rejected input must not create project state");
+    assert.match(runCli(root, ["init", "--domain", "example.com", "--location", "US", "--language", "ru"]).stderr, /Language 'ru' is not available for this location\. Available: en, es\./);
+    assert.match(runCli(root, ["init", "--domain", "example.com", "--location", "1"]).stderr, /Unsupported location "1"/);
 
-    const init = runCli(root, ["init", "--domain", "https://WWW.Example.com/pricing?x=1", "--location", "2840", "--language", "en"]);
+    const init = runCli(root, ["init", "--domain", "https://WWW.Example.com/pricing?x=1", "--location", "gb"]);
     assert.equal(init.status, 0, init.stderr);
-    assert.equal(JSON.parse(await readFile(join(root, ".agenticseo", "project.json"), "utf8")).domain, "example.com");
+    assert.deepEqual(JSON.parse(await readFile(join(root, ".agenticseo", "project.json"), "utf8")), { domain: "example.com", locationCode: 2826, languageCode: "en" }, "country code resolves and the language defaults to the country's");
     const again = runCli(root, ["init", "--domain", "example.com", "--location", "2840", "--language", "en"]);
     assert.equal(again.status, 2);
     assert.match(again.stderr, /already has a project/);
@@ -109,5 +116,29 @@ test("context rejects invalid hand edits with the input exit code", async () => 
       assert.equal(result.status, 2, `${invalid.slice(0, 80)}: ${result.stderr}`);
       assert.match(result.stderr, /context\.json/);
     }
+  });
+});
+
+test("a market override resolves like OpenSEO's resolveMarket and is validated before any paid call", () => {
+  const project = { locationCode: 2840, languageCode: "en" };
+  assert.deepEqual(marketForCall(project, {}), project);
+  assert.deepEqual(marketForCall(project, { location: "DE" }), { locationCode: 2276, languageCode: "de" }, "a new location snaps to its language");
+  assert.deepEqual(marketForCall(project, { language: "es" }), { locationCode: 2840, languageCode: "es" });
+  assert.throws(() => marketForCall(project, { language: "ru" }), (error: unknown) => error instanceof OperationError && error.kind === "input" && /Available: en, es/.test(error.message));
+  assert.throws(() => marketForCall(project, { location: "Atlantis" }), /Unsupported location "Atlantis"/);
+  assert.throws(() => marketForCall(project, { location: "1" }), /Unsupported location "1"/);
+});
+
+test("paid commands refuse an invalid market from project.json or the command line without calling DataForSEO", async () => {
+  await withProject(async (root) => {
+    const env = { DATAFORSEO_API_KEY: "TEST_KEY" };
+    const override = runCli(root, ["keywords", "seo audit", "--language", "ru"], { env, mock: true });
+    assert.equal(override.status, 2, override.stderr);
+    assert.match(override.stderr, /Language 'ru' is not available/);
+
+    await writeFile(join(root, ".agenticseo", "project.json"), JSON.stringify({ domain: "example.com", locationCode: 2840, languageCode: "ru" }));
+    const stored = runCli(root, ["serp", "seo audit"], { env, mock: true });
+    assert.equal(stored.status, 2, stored.stderr);
+    assert.match(stored.stderr, /project\.json[\s\S]*languageCode/);
   });
 });
