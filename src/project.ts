@@ -61,7 +61,12 @@ const contextSchema = z.strictObject({
     .max(MAX_COMPETITORS).default([]),
   keyPages: z.array(keyPageInputSchema.extend({ url: keyPageInputSchema.shape.url.pipe(keyPageUrl) }).strict())
     .max(MAX_KEY_PAGES, "This is a shortlist, not a page inventory").default([]),
-  researchLog: z.array(z.strictObject({ entryDate: z.iso.date(), summary: researchLogSummarySchema })).default([]),
+  // OpenSEO's server stamps entry dates; here the agent writes them, so refuse the
+  // one mistake that is detectable: a date after today (for example a model's guess).
+  researchLog: z.array(z.strictObject({
+    entryDate: z.iso.date().refine((date) => date <= localDate(), { error: () => `is after today (${localDate()}); use \`today\` from agenticseo context` }),
+    summary: researchLogSummarySchema,
+  })).default([]),
 }).superRefine((context, issues) => {
   // Upstream upserts by normalized domain/url; a hand-edited file must not hold two entries for one.
   const domain = firstDuplicate(context.competitors.map((entry) => entry.domain));
@@ -69,6 +74,12 @@ const contextSchema = z.strictObject({
   const url = firstDuplicate(context.keyPages.map((entry) => entry.url));
   if (url) issues.addIssue({ code: "custom", path: ["keyPages"], message: `Duplicate key page ${url}` });
 });
+
+/** The user's local calendar date as YYYY-MM-DD; research-log dates follow their calendar. */
+function localDate(offsetDays = 0) {
+  const date = new Date(Date.now() + offsetDays * 86_400_000);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
 
 function firstDuplicate(values: string[]) {
   return values.find((value, index) => values.indexOf(value) !== index);
@@ -146,13 +157,15 @@ export async function initProject(root: string, input: { domain?: string; locati
  */
 export async function readContext(root: string) {
   const context = (await readState(contextFile(root), contextSchema)) ?? contextSchema.parse({});
-  const since = new Date(Date.now() - RESEARCH_LOG_RETENTION_DAYS * 86_400_000).toISOString().slice(0, 10);
+  const since = localDate(-RESEARCH_LOG_RETENTION_DAYS);
   const researchLog = context.researchLog
     .filter((entry) => entry.entryDate >= since)
     .sort((a, b) => b.entryDate.localeCompare(a.entryDate))
     .slice(0, RESEARCH_LOG_LIMIT);
   return {
     file: contextFile(root),
+    // Agents copy this into new research-log entries instead of guessing the date.
+    today: localDate(),
     context: { ...context, researchLog },
     researchLogOmitted: context.researchLog.length - researchLog.length,
     missingSections: PROJECT_CONTEXT_SECTION_KEYS.filter((key) => context.sections[key] === ""),

@@ -1,7 +1,7 @@
 import { OperationError } from "./errors.js";
 import { DataforseoChargedTaskError, type DataforseoApiResponse } from "./openseo/dataforseo/envelope.js";
 import { fetchAdsSearchVolume } from "./openseo/dataforseo/google-ads.js";
-import { fetchKeywordMetricsForList, type KeywordMetricsClient } from "./openseo/dataforseo/keyword-metrics.js";
+import { fetchKeywordMetricsForList, type KeywordMetricRow, type KeywordMetricsClient } from "./openseo/dataforseo/keyword-metrics.js";
 import { fetchKeywordOverview } from "./openseo/dataforseo/labs.js";
 import { getKeywordDataProvider } from "./openseo/keyword-locations.js";
 import type { Project } from "./project.js";
@@ -27,6 +27,16 @@ function recorded<I, T extends unknown[]>(calls: ProviderCall[], fetcher: (input
   };
 }
 
+/**
+ * Labs and Google Ads both sometimes return a row whose every metric is null. For the
+ * agent that is the same as no row, so such terms are reported as missing; the raw
+ * items stay in the evidence either way.
+ */
+function hasMetrics(row: KeywordMetricRow) {
+  return [row.searchVolume, row.cpc, row.competition, row.competitionLevel, row.keywordDifficulty, row.intent].some((value) => value != null)
+    || row.monthlySearches.length > 0;
+}
+
 export async function keywordMetrics(project: Project, keywords: string[], options: { includeClickstreamData: boolean }) {
   const source = getKeywordDataProvider(project.locationCode);
   if (options.includeClickstreamData && source !== "labs") {
@@ -37,12 +47,13 @@ export async function keywordMetrics(project: Project, keywords: string[], optio
     labs: { keywordOverview: recorded(calls, fetchKeywordOverview) },
     keywords: { adsSearchVolume: recorded(calls, fetchAdsSearchVolume) },
   };
-  const rows = await fetchKeywordMetricsForList(client, {
+  const allRows = await fetchKeywordMetricsForList(client, {
     keywords,
     locationCode: project.locationCode,
     languageCode: project.languageCode,
     includeClickstreamData: options.includeClickstreamData,
   });
+  const rows = allRows.filter(hasMetrics);
   const returned = new Set(rows.map((row) => row.keyword.toLowerCase()));
   return {
     source,

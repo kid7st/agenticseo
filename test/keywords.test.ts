@@ -49,19 +49,23 @@ test("maps Labs metrics without inventing missing values and records the raw cal
   assert.equal(result.source, "labs");
   assert.deepEqual(result.rows, [
     { keyword: "seo audit", searchVolume: 1200, cpc: 2.5, competition: 0.42, competitionLevel: "MEDIUM", keywordDifficulty: 35, intent: "commercial", monthlySearches: [{ year: 2026, month: 8, searchVolume: 1300 }, { year: 2026, month: 7, searchVolume: null }] },
-    { keyword: "seo tool", searchVolume: null, cpc: null, competition: null, competitionLevel: null, keywordDifficulty: null, intent: null, monthlySearches: [] },
   ]);
+  assert.deepEqual(result.missingKeywords, ["seo tool"], "a row with no metric at all counts as missing");
   assert.equal(result.costUsd, 0.01);
   assert.equal(result.calls[0].items.length, 2, "raw items are kept for evidence");
 });
 
 test("routes Google-Ads-only markets to search volume, as OpenSEO does", async () => {
   const andorra = { ...project, locationCode: 2020, languageCode: "ca" };
-  const ads = { status_code: 20000, tasks: [{ status_code: 20000, cost: 0.075, path: ["v3", "keywords_data"], result: [{ keyword: "seo audit", search_volume: 20, cpc: 1.1, competition: "LOW", competition_index: 12, monthly_searches: null }] }] };
-  const { result, requests } = await withFetch(() => Response.json(ads), () => keywordMetrics(andorra, ["seo audit"], { includeClickstreamData: false }));
+  const ads = { status_code: 20000, tasks: [{ status_code: 20000, cost: 0.075, path: ["v3", "keywords_data"], result: [
+    { keyword: "seo audit", search_volume: 20, cpc: 1.1, competition: "LOW", competition_index: 12, monthly_searches: null },
+    { keyword: "zzqx", search_volume: null, cpc: null, competition: null, competition_index: null, monthly_searches: null },
+  ] }] };
+  const { result, requests } = await withFetch(() => Response.json(ads), () => keywordMetrics(andorra, ["seo audit", "zzqx"], { includeClickstreamData: false }));
   assert.equal(requests[0].url, adsUrl);
   assert.equal(result.source, "google_ads");
-  assert.deepEqual(result.rows[0], { keyword: "seo audit", searchVolume: 20, cpc: 1.1, competition: 0.12, competitionLevel: "LOW", keywordDifficulty: null, intent: null, monthlySearches: [] });
+  assert.deepEqual(result.rows, [{ keyword: "seo audit", searchVolume: 20, cpc: 1.1, competition: 0.12, competitionLevel: "LOW", keywordDifficulty: null, intent: null, monthlySearches: [] }]);
+  assert.deepEqual(result.missingKeywords, ["zzqx"]);
   await assert.rejects(keywordMetrics(andorra, ["seo audit"], { includeClickstreamData: true }), /only to markets served by DataForSEO Labs/);
 });
 
@@ -69,7 +73,7 @@ test("retries a transient 5xx and then succeeds", async () => {
   let attempts = 0;
   const { result } = await withFetch(() => (++attempts < 3 ? new Response("busy", { status: 503 }) : Response.json(fixture)), () => keywordMetrics(project, ["seo audit"], { includeClickstreamData: false }));
   assert.equal(attempts, 3);
-  assert.equal(result.rows.length, 2);
+  assert.equal(result.rows.length, 1);
 });
 
 test("classifies credential, transport, task and payload failures", async () => {
@@ -114,12 +118,12 @@ test("CLI discovers a project, saves full evidence, and maps failures to exit co
     assert.equal(result.status, 0, result.stderr);
     const output = JSON.parse(result.stdout) as { project: typeof project; rows: unknown[]; missingKeywords: string[]; evidence: string };
     assert.equal(output.project.domain, "example.com");
-    assert.equal(output.rows.length, 2);
-    assert.deepEqual(output.missingKeywords, ["missing term"]);
+    assert.equal(output.rows.length, 1);
+    assert.deepEqual(output.missingKeywords, ["seo tool", "missing term"]);
     const saved = JSON.parse(await readFile(output.evidence, "utf8")) as { calls: Array<{ path: string[]; costUsd: number; items: unknown }>; rows: unknown[] };
     const task = (fixture.tasks as Array<{ path: string[]; result: Array<{ items: unknown }> }>)[0];
     assert.deepEqual(saved.calls, [{ path: task.path, costUsd: 0.01, items: task.result[0].items }]);
-    assert.equal(saved.rows.length, 2);
+    assert.equal(saved.rows.length, 1);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
