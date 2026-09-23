@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { resolve } from "node:path";
 import { OperationError } from "./errors.js";
-import { domainOverview, rankedKeywords, serpCompetitors } from "./domain.js";
+import { domainOverview, domainPages, rankedKeywords, serpCompetitors } from "./domain.js";
 import { keywordMetrics, researchKeywords, serpResults } from "./keywords.js";
 import { marketForCall, marketForNewProject } from "./market.js";
 import { RESEARCH_SCOPES, type ResearchScope } from "./openseo/researchScope.js";
@@ -19,6 +19,9 @@ const usage = `Usage:
   agenticseo ranked TARGET [--scope SCOPE] [--sort rank|search_volume|traffic_estimate|cpc]
       [--min-volume N] [--max-rank N] [--exclude TERM,...] [--types TYPE,...]
       [--limit 1-100] [--offset 0-1000] [MARKET] [--project DIR]
+  agenticseo pages TARGET [--scope SCOPE] [--sort traffic|keywords] [--order desc|asc]
+      [--include TERM,...] [--exclude TERM,...] [--min-traffic N] [--max-traffic N]
+      [--min-keywords N] [--max-keywords N] [--page N] [--page-size 50|100|200] [MARKET] [--project DIR]
   agenticseo competitors KEYWORD... [--types TYPE,...] [--exclude-domains DOMAIN,...]
       [--include-subdomains] [--sort visibility|traffic_estimate|avg_position|keyword_count]
       [--limit 1-100] [--offset 0-1000] [MARKET] [--project DIR]
@@ -195,6 +198,33 @@ async function run([command, ...args]: string[]): Promise<unknown> {
     const evidence = await saveEvidence(root, fetchedAt, { provider: "DataForSEO", fetchedAt, project, market, request: { target, ...input }, ...result });
     const { calls: _calls, ...summary } = result;
     return { provider: "DataForSEO", fetchedAt, market, ...summary, evidence };
+  }
+
+  if (command === "pages") {
+    const pageSize = Number(option(args, "--page-size") ?? 100);
+    if (pageSize !== 50 && pageSize !== 100 && pageSize !== 200) throw new OperationError("input", "--page-size must be 50, 100 or 200");
+    const input = {
+      scope: enumOption<ResearchScope>(args, "--scope", RESEARCH_SCOPES),
+      sortMode: enumOption(args, "--sort", ["traffic", "keywords"] as const) ?? "traffic",
+      sortOrder: enumOption(args, "--order", ["desc", "asc"] as const) ?? "desc",
+      page: intOption(args, "--page", 1, 1000) ?? 1,
+      pageSize: pageSize as 50 | 100 | 200,
+      // OpenSEO's pages view reuses the keyword filter fields: minVol/maxVol bound a page's keyword count.
+      filters: {
+        include: option(args, "--include"),
+        exclude: option(args, "--exclude"),
+        minTraffic: intOption(args, "--min-traffic", 0, Number.MAX_SAFE_INTEGER),
+        maxTraffic: intOption(args, "--max-traffic", 0, Number.MAX_SAFE_INTEGER),
+        minVol: intOption(args, "--min-keywords", 0, Number.MAX_SAFE_INTEGER),
+        maxVol: intOption(args, "--max-keywords", 0, Number.MAX_SAFE_INTEGER),
+      },
+    };
+    const { root, project, market } = await paidCallScope();
+    const target = singlePhrase(args, "domain or URL");
+    const result = await domainPages(market, { target, ...input, cacheDirectory: await cacheDirectory(root) });
+    const evidence = await saveEvidence(root, new Date().toISOString(), { provider: "DataForSEO", project, market, request: { target, ...input }, ...result });
+    const { calls: _calls, ...summary } = result;
+    return { provider: "DataForSEO", market, ...summary, evidence };
   }
 
   if (command === "competitors") {
