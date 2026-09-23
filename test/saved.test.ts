@@ -189,6 +189,26 @@ test("two commands opening a fresh database at once apply the schema once", asyn
   });
 });
 
+test("processes opening a fresh database at the same moment all switch it to WAL", async () => {
+  // SQLite refuses concurrent first WAL conversions with SQLITE_BUSY without waiting;
+  // unretried, about one process in six failed this way in a synchronized spike.
+  const worker = fileURLToPath(new URL("./open-store-worker.ts", import.meta.url));
+  for (let round = 0; round < 3; round++) {
+    await withRoot(async (root) => {
+      const startAt = Date.now() + 1500;
+      const results = await Promise.all(Array.from({ length: 12 }, () => new Promise<string>((resolve) => {
+        const child = spawn(process.execPath, ["--import", import.meta.resolve("tsx"), worker, root, String(startAt)], { stdio: ["ignore", "pipe", "inherit"] });
+        let stdout = "";
+        child.stdout.on("data", (chunk) => (stdout += chunk));
+        child.on("exit", () => resolve(stdout.trim()));
+      })));
+      assert.deepEqual(results, Array(12).fill("ok"));
+      const [{ journal_mode: mode }] = (await queryStore(root, "PRAGMA journal_mode")).rows as Array<{ journal_mode: string }>;
+      assert.equal(mode, "wal");
+    });
+  }
+});
+
 test("parallel CLI writers all succeed against one project database", async () => {
   await withProject(async (root) => {
     const cli = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
