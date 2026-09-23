@@ -8,6 +8,15 @@ updates:
     groups:
       npm-dependencies:
         patterns: ["*"]
+    ignore:
+      # Keep the Node typings on the oldest supported runtime (engines.node >= 22)
+      # so CI cannot type-check against APIs that version does not have.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      # TypeScript 7 is the Go port; it does not pick up @types/node automatically
+      # with this tsconfig. Revisit deliberately, not through an automated bump.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
