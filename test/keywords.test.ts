@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { keywordMetrics } from "../src/dataforseo.js";
 import { OperationError } from "../src/errors.js";
-import { runCli } from "./run-cli.js";
+import { runCli } from "./helpers.js";
 
 const fixture = JSON.parse(await readFile(new URL("./keyword-overview.json", import.meta.url), "utf8")) as Record<string, unknown>;
 const project = { domain: "example.com", locationCode: 2840, languageCode: "en" };

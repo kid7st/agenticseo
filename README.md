@@ -2,7 +2,7 @@
 
 Open-source, local-first SEO for agents. AgenticSEO aims to bring OpenSEO's SEO capabilities to a portable core, local commands, and agent skills, without requiring an OpenSEO account, MCP server, browser UI, or always-on application server. Pi is the first development client, not the only intended user.
 
-**Status:** early prototype. Project setup, project context and a local DataForSEO keyword-metrics snapshot are implemented; the full [OpenSEO capability inventory](docs/PRODUCT.md) remains the goal.
+**Status:** early prototype. Project setup, project context, local reports and a DataForSEO keyword-metrics snapshot are implemented; the full [OpenSEO capability inventory](docs/PRODUCT.md) remains the goal.
 
 - [Product and capability inventory](docs/PRODUCT.md)
 - [Technical design](docs/DESIGN.md)
@@ -21,9 +21,10 @@ cd /path/to/your-website
 agenticseo init --domain example.com --location 2840 --language en
 agenticseo context
 agenticseo keywords "seo audit" "seo tool"
+agenticseo reports
 ```
 
-`2840/en` is the US/English market; use your own DataForSEO location and language codes. `init` creates `.agenticseo/project.json` in the current directory. `context` validates and prints `.agenticseo/context.json`, the project's shared memory: business overview, current goal, positioning, writing preferences, custom sections, competitors and key pages. People and agents edit that file directly; a missing file is an empty context, and an invalid one fails with the exact field. `keywords` finds the project from the current directory or an ancestor, returns a short JSON snapshot, and saves full evidence under `.agenticseo/evidence/` (ignored by Git there). Pass `--project DIR` to use a different root. This first slice uses DataForSEO Labs keyword overview, not SERP rankings or keyword discovery; it may be unavailable in markets served only by Google Ads. If the key is missing, the command fails without a lookup.
+`2840/en` is the US/English market; use your own DataForSEO location and language codes. `init` creates `.agenticseo/project.json` in the current directory. `context` validates and prints `.agenticseo/context.json`, the project's shared memory: business overview, current goal, positioning, writing preferences, custom sections, competitors and key pages. People and agents edit that file directly; a missing file is an empty context, and an invalid one fails with the exact field. `reports` indexes `.agenticseo/reports/*.md` and `.agenticseo/templates/*.md`: a report's first line is its `# Title` and the text before its first section is its summary. An optional self-contained `.html` file with the same name is its HTML export. Reports and context are meant to be versioned with the site; evidence is not. `keywords` finds the project from the current directory or an ancestor, returns a short JSON snapshot, and saves full evidence under `.agenticseo/evidence/` (ignored by Git there). Pass `--project DIR` to use a different root. This first slice uses DataForSEO Labs keyword overview, not SERP rankings or keyword discovery; it may be unavailable in markets served only by Google Ads. If the key is missing, the command fails without a lookup.
 
 Every command prints one JSON document on stdout when it succeeds. Failures print a message on stderr and exit with a code an agent can branch on:
 
@@ -35,7 +36,7 @@ Every command prints one JSON document on stdout when it succeeds. Failures prin
 | 3 | Missing or rejected credentials |
 | 4 | Provider failure: network, HTTP error, provider status or unexpected payload; charged failures include the cost |
 
-The [project setup skill](.agents/skills/seo-project-setup/SKILL.md) interviews the user and fills the project context. The [keyword snapshot skill](.agents/skills/keyword-snapshot/SKILL.md) guides a coding agent through using these results. Run Pi in this repository to discover the skill, or install it into your own agent using its skill manager. Run `npm run check` for the fixture-backed tests. No live DataForSEO call is part of the test suite.
+The [project setup skill](.agents/skills/seo-project-setup/SKILL.md) interviews the user and fills the project context. The [report skill](.agents/skills/seo-report/SKILL.md) saves a finding as a report. The [keyword snapshot skill](.agents/skills/keyword-snapshot/SKILL.md) guides a coding agent through using these results. Run Pi in this repository to discover the skill, or install it into your own agent using its skill manager. Run `npm run check` for the fixture-backed tests. No live DataForSEO call is part of the test suite.
 
 A local invocation may still call paid external services, including DataForSEO. Google Search Console and Analytics require authorization. Remote execution is optional for long or unattended jobs, not a prerequisite for normal CLI use.
 
