@@ -36,6 +36,10 @@ export type ResearchScope = (typeof RESEARCH_SCOPES)[number];
 
 export const researchScopeSchema = z.enum(RESEARCH_SCOPES);
 
+/** Base wording for MCP `scope` params; tools append their own caveats. */
+export const RESEARCH_SCOPE_PARAM_DESCRIPTION =
+  "Research scope: 'domain' (hostname without subdomains), 'subdomains' (hostname plus all subdomains), 'subfolder' (path and its children), or 'exact_url' (one page). Defaults to 'subdomains' for root inputs and 'subfolder' when the input has a path.";
+
 export type ResearchTarget = {
   scope: ResearchScope;
   /** Lowercased hostname with a leading `www.` stripped. */
