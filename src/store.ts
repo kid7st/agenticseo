@@ -1,5 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { OperationError } from "./errors.js";
 import { dataDirectory } from "./project.js";
 
@@ -50,19 +51,47 @@ const migrations = [
    );`,
 ];
 
-const databaseFile = (directory: string) => join(directory, "agenticseo.db");
+export const databaseFile = (directory: string) => join(directory, "agenticseo.db");
 
 const schemaVersion = (db: DatabaseSync) => (db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
+
+const busyTimeoutMs = 5000;
+
+/**
+ * Switches the database to WAL. Converting a new database needs a read lock upgraded to
+ * an exclusive one; when several commands do that at once, SQLite returns SQLITE_BUSY
+ * immediately instead of waiting for busy_timeout (its lock-upgrade deadlock rule), so
+ * this statement is retried within the same budget. On a database already in WAL mode
+ * the statement is a no-op.
+ */
+async function enableWal(db: DatabaseSync) {
+  const deadline = Date.now() + busyTimeoutMs;
+  for (;;) {
+    try {
+      db.exec("PRAGMA journal_mode = WAL");
+      return;
+    } catch (error) {
+      const busy = ((error as { errcode?: number }).errcode ?? 0) % 256 === 5;
+      if (!busy || Date.now() > deadline) throw error;
+      await sleep(20 + Math.random() * 30);
+    }
+  }
+}
 
 /**
  * Opens the project database. WAL lets readers run while one command writes, and the
  * busy timeout makes concurrent writers wait instead of failing (see docs/DESIGN.md).
  */
 export async function openStore(root: string): Promise<Store> {
-  const db = new DatabaseSync(databaseFile(await dataDirectory(root)));
-  // The timeout comes first so that switching to WAL also waits for other writers.
-  db.exec("PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
+  return openDatabase(databaseFile(await dataDirectory(root)));
+}
+
+/** Opens and migrates a database file; openStore resolves the project's file first. */
+export async function openDatabase(file: string): Promise<Store> {
+  const db = new DatabaseSync(file);
   try {
+    db.exec(`PRAGMA busy_timeout = ${busyTimeoutMs}; PRAGMA foreign_keys = ON;`);
+    await enableWal(db);
     if (schemaVersion(db) !== migrations.length) {
       transaction(db, () => {
         // Re-read under the write lock: a concurrent command may have migrated meanwhile.
