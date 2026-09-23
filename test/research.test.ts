@@ -6,6 +6,7 @@ import test from "node:test";
 import { OperationError } from "../src/errors.js";
 import { researchKeywords, serpResults } from "../src/keywords.js";
 import { createFileCache } from "../src/openseo/cache.js";
+import { openStore, type Store } from "../src/store.js";
 import { runCli, withFetch, withProject } from "./helpers.js";
 
 const project = { domain: "example.com", locationCode: 2840, languageCode: "en" };
@@ -19,19 +20,22 @@ const labsItem = (keyword: string, volume: number | null = 100) => ({
 });
 const labsResponse = (items: unknown[], cost = 0.02) => Response.json({ status_code: 20000, tasks: [{ status_code: 20000, cost, path: ["v3", "dataforseo_labs"], result: [{ items }] }] });
 
-async function withCache<T>(run: (cacheDirectory: string) => Promise<T>) {
+/** A scratch project directory: its cache directory and an open project database. */
+async function withCache<T>(run: (cacheDirectory: string, db: Store) => Promise<T>) {
   const directory = await mkdtemp(join(tmpdir(), "agenticseo-cache-"));
+  const db = await openStore(directory);
   try {
-    return await run(directory);
+    return await run(directory, db);
   } finally {
+    db.close();
     await rm(directory, { recursive: true, force: true });
   }
 }
 
 test("research uses related keywords when they cover the seed, then serves the cached result for free", async () => {
-  await withCache(async (cacheDirectory) => {
+  await withCache(async (cacheDirectory, db) => {
     const related = ["seo audit", "seo audit tool", "free seo audit", "seo audit checklist", "website seo audit", "seo audit report"];
-    const options = { resultLimit: 150 as const, clickstream: false, cacheDirectory };
+    const options = { resultLimit: 150 as const, clickstream: false, cacheDirectory, db };
     const live = await withFetch(
       () => labsResponse(related.map((keyword) => ({ keyword_data: labsItem(keyword) }))),
       () => researchKeywords(project, "SEO Audit", options),
@@ -44,6 +48,10 @@ test("research uses related keywords when they cover the seed, then serves the c
     assert.equal(live.result.costUsd, 0.02);
     assert.deepEqual(live.result.rows[1], { keyword: "seo audit tool", searchVolume: 100, trend: [{ year: 2026, month: 8, searchVolume: 100 }], cpc: 1.5, competition: 0.3, keywordDifficulty: 20, intent: "commercial" });
 
+    const stored = db.prepare("SELECT keyword, search_volume, monthly_searches FROM keyword_metrics WHERE location_code = 2840 ORDER BY keyword").all();
+    assert.equal(stored.length, 6, "every researched keyword's metrics are stored, as OpenSEO's persistRows does");
+    assert.deepEqual({ ...stored[0] }, { keyword: "free seo audit", search_volume: 100, monthly_searches: JSON.stringify([{ year: 2026, month: 8, searchVolume: 100 }]) });
+
     const again = await withFetch(() => assert.fail("a cached research must not call DataForSEO"), () => researchKeywords(project, "seo audit", options));
     assert.equal(again.result.cached, true);
     assert.equal(again.result.costUsd, 0);
@@ -52,12 +60,12 @@ test("research uses related keywords when they cover the seed, then serves the c
 });
 
 test("research falls back to suggestions when related keywords are too few, keeping unknown trend volumes null", async () => {
-  await withCache(async (cacheDirectory) => {
+  await withCache(async (cacheDirectory, db) => {
     const { result, requests } = await withFetch(
       (url) => url.includes("related_keywords")
         ? labsResponse([{ keyword_data: labsItem("seo audit") }, { keyword_data: labsItem("seo audit tool", null) }])
         : labsResponse(["seo audit", "a", "b", "c", "d"].map((keyword) => labsItem(keyword)), 0.01),
-      () => researchKeywords(project, "seo audit", { resultLimit: 150, clickstream: false, cacheDirectory }),
+      () => researchKeywords(project, "seo audit", { resultLimit: 150, clickstream: false, cacheDirectory, db }),
     );
     assert.deepEqual(requests.map((request) => request.url.split("/").at(-2)), ["related_keywords", "keyword_suggestions"]);
     assert.equal(result.source, "suggestions");
@@ -69,17 +77,17 @@ test("research falls back to suggestions when related keywords are too few, keep
 });
 
 test("research routes Google-Ads-only markets to keywords_for_keywords and refuses clickstream there", async () => {
-  await withCache(async (cacheDirectory) => {
+  await withCache(async (cacheDirectory, db) => {
     const andorra = { ...project, locationCode: 2020, languageCode: "ca" };
     const ads = { status_code: 20000, tasks: [{ status_code: 20000, cost: 0.09, path: ["v3", "keywords_data"], result: [
       { keyword: "SEO", search_volume: 50, cpc: 5.5, competition: "LOW", competition_index: 26, monthly_searches: null },
       { keyword: "seo andorra", search_volume: null, cpc: null, competition: null, competition_index: null, monthly_searches: null },
     ] }] };
-    const { result, requests } = await withFetch(() => Response.json(ads), () => researchKeywords(andorra, "seo", { resultLimit: 150, clickstream: false, cacheDirectory }));
+    const { result, requests } = await withFetch(() => Response.json(ads), () => researchKeywords(andorra, "seo", { resultLimit: 150, clickstream: false, cacheDirectory, db }));
     assert.equal(requests[0].url, `${api}/keywords_data/google_ads/keywords_for_keywords/live`);
     assert.equal(result.source, "google_ads");
     assert.deepEqual(result.rows[0], { keyword: "seo", searchVolume: 50, trend: [], cpc: 5.5, competition: 0.26, keywordDifficulty: null, intent: "unknown" });
-    await assert.rejects(researchKeywords(andorra, "seo", { resultLimit: 150, clickstream: true, cacheDirectory }), /only to markets served by DataForSEO Labs/);
+    await assert.rejects(researchKeywords(andorra, "seo", { resultLimit: 150, clickstream: true, cacheDirectory, db }), /only to markets served by DataForSEO Labs/);
   });
 });
 
@@ -152,10 +160,10 @@ test("the file cache honors expiry and treats an unreadable entry as a miss", as
 });
 
 test("research rejects a related-keywords payload with the wrong shape as a provider failure", async () => {
-  await withCache(async (cacheDirectory) => {
+  await withCache(async (cacheDirectory, db) => {
     const bad = labsResponse([{ keyword_data: { keyword: "seo audit", keyword_info: { search_volume: "many" } } }]);
     await withFetch(() => bad, () => assert.rejects(
-      researchKeywords(project, "seo audit", { resultLimit: 150, clickstream: false, cacheDirectory }),
+      researchKeywords(project, "seo audit", { resultLimit: 150, clickstream: false, cacheDirectory, db }),
       (error: unknown) => error instanceof OperationError && error.kind === "provider" && /related_keywords returned an invalid response shape/.test(error.message),
     ));
   });

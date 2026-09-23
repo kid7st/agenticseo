@@ -5,6 +5,8 @@ import { domainOverview, domainPages, rankedKeywords, serpCompetitors } from "./
 import { keywordMetrics, researchKeywords, serpResults } from "./keywords.js";
 import { marketForCall, marketForNewProject } from "./market.js";
 import { RESEARCH_SCOPES, type ResearchScope } from "./openseo/researchScope.js";
+import { deleteTagCommand, exportCommand, listCommand, refreshCommand, removeCommand, renameTagCommand, saveCommand, tagCommand, type SavedFilters } from "./saved.js";
+import { queryStore, withStore } from "./store.js";
 import { cacheDirectory, findProjectRoot, initProject, readContext, readProject, saveEvidence } from "./project.js";
 import { listReports, listTemplates } from "./reports.js";
 
@@ -25,7 +27,19 @@ const usage = `Usage:
   agenticseo competitors KEYWORD... [--types TYPE,...] [--exclude-domains DOMAIN,...]
       [--include-subdomains] [--sort visibility|traffic_estimate|avg_position|keyword_count]
       [--limit 1-100] [--offset 0-1000] [MARKET] [--project DIR]
+  agenticseo saved add KEYWORD... [--tags TAG,...] [--replace-tags] [MARKET] [--project DIR]
+  agenticseo saved list [FILTERS] [--page N] [--page-size 50|100|250] [--project DIR]
+  agenticseo saved export [FILTERS] [--format csv|jsonl] [--out FILE] [--project DIR]
+  agenticseo saved remove ID... [--project DIR]
+  agenticseo saved tag ID... [--add TAG,...] [--remove TAG,...] [--project DIR]
+  agenticseo saved rename-tag TAG [--to NEW_NAME] [--color COLOR|none] [--project DIR]
+  agenticseo saved delete-tag TAG [--project DIR]
+  agenticseo saved refresh [--project DIR]
+  agenticseo query "SELECT ..." [--project DIR]
 MARKET overrides the project's market for one call: --location US|2840 [--language en]
+FILTERS: --search TEXT --include TERM,... --exclude TERM,... --tags TAG,... --min-volume N --max-volume N
+  --min-cpc N --max-cpc N --min-difficulty N --max-difficulty N
+  --sort createdAt|keyword|searchVolume|cpc|competition|keywordDifficulty|fetchedAt --order desc|asc
 SCOPE is exact_url, subfolder, domain or subdomains (default: subdomains for a domain, subfolder for a URL)`;
 
 // Documented in README.md; agents branch on these instead of parsing stderr.
@@ -46,6 +60,41 @@ function intOption(args: string[], name: string, min: number, max: number) {
   const number = Number(value);
   if (!Number.isInteger(number) || number < min || number > max) throw new OperationError("input", `${name} must be an integer from ${min} to ${max}`);
   return number;
+}
+
+function numberOption(args: string[], name: string) {
+  const value = option(args, name);
+  if (value === undefined) return undefined;
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) throw new OperationError("input", `${name} must be a non-negative number`);
+  return number;
+}
+
+/** The saved-keyword list filters shared by `saved list` and `saved export` (OpenSEO's list params). */
+function savedFilters(args: string[]): SavedFilters {
+  return {
+    search: option(args, "--search"),
+    includeTerms: listOption(args, "--include"),
+    excludeTerms: listOption(args, "--exclude"),
+    tagNames: listOption(args, "--tags"),
+    minVolume: numberOption(args, "--min-volume"),
+    maxVolume: numberOption(args, "--max-volume"),
+    minCpc: numberOption(args, "--min-cpc"),
+    maxCpc: numberOption(args, "--max-cpc"),
+    minDifficulty: numberOption(args, "--min-difficulty"),
+    maxDifficulty: numberOption(args, "--max-difficulty"),
+    sort: enumOption(args, "--sort", ["createdAt", "keyword", "searchVolume", "cpc", "competition", "keywordDifficulty", "fetchedAt"] as const),
+    order: enumOption(args, "--order", ["desc", "asc"] as const),
+  };
+}
+
+/** Remaining positional arguments, after every known option was consumed. */
+function positionals(args: string[], what: string, max = Infinity) {
+  const unknown = args.find((arg) => arg.startsWith("--"));
+  if (unknown) throw new OperationError("input", `Unexpected option ${unknown}\n${usage}`);
+  const values = [...new Set(args.map((arg) => arg.trim()).filter(Boolean))];
+  if (values.length === 0 || values.length > max) throw new OperationError("input", `Provide 1–${max === Infinity ? "n" : max} ${what}`);
+  return values;
 }
 
 function enumOption<T extends string>(args: string[], name: string, values: readonly T[]): T | undefined {
@@ -138,7 +187,8 @@ async function run([command, ...args]: string[]): Promise<unknown> {
     const { root, project, market } = await paidCallScope();
     const seed = singlePhrase(args, "seed keyword");
     const fetchedAt = new Date().toISOString();
-    const result = await researchKeywords(market, seed, { resultLimit: limit, clickstream, cacheDirectory: await cacheDirectory(root) });
+    const cache = await cacheDirectory(root);
+    const result = await withStore(root, (db) => researchKeywords(market, seed, { resultLimit: limit, clickstream, cacheDirectory: cache, db }));
     const evidence = await saveEvidence(root, fetchedAt, { provider: "DataForSEO", fetchedAt, project, market, seed, resultLimit: limit, clickstream, ...result });
     return {
       provider: "DataForSEO",
@@ -244,6 +294,64 @@ async function run([command, ...args]: string[]): Promise<unknown> {
     const evidence = await saveEvidence(root, fetchedAt, { provider: "DataForSEO", fetchedAt, project, market, request: { keywords, ...input }, ...result });
     const { calls: _calls, ...summary } = result;
     return { provider: "DataForSEO", fetchedAt, market, keywords: keywords.length, ...summary, evidence };
+  }
+
+  if (command === "saved") {
+    const action = args.shift();
+    if (action === "add") {
+      const tags = listOption(args, "--tags");
+      const replaceTags = flag(args, "--replace-tags");
+      if (tags && (tags.length > 20 || tags.some((tag) => tag.length > 64))) throw new OperationError("input", "--tags takes up to 20 tags of at most 64 characters");
+      const { root, market } = await paidCallScope();
+      return saveCommand(root, market, { keywords: positionals(args, "keywords", 100), tags, replaceTags });
+    }
+    if (action === "list") {
+      const filters = savedFilters(args);
+      const page = intOption(args, "--page", 1, Number.MAX_SAFE_INTEGER) ?? 1;
+      const pageSize = Number(option(args, "--page-size") ?? 100);
+      if (pageSize !== 50 && pageSize !== 100 && pageSize !== 250) throw new OperationError("input", "--page-size must be 50, 100 or 250");
+      rejectUnknown(args);
+      return listCommand(await findProjectRoot(projectOption), { ...filters, page, pageSize });
+    }
+    if (action === "export") {
+      const filters = savedFilters(args);
+      const format = enumOption(args, "--format", ["csv", "jsonl"] as const) ?? "csv";
+      const out = option(args, "--out");
+      rejectUnknown(args);
+      return exportCommand(await findProjectRoot(projectOption), { ...filters, format, out });
+    }
+    if (action === "remove") return removeCommand(await findProjectRoot(projectOption), positionals(args, "saved keyword ids"));
+    if (action === "tag") {
+      const add = listOption(args, "--add");
+      const remove = listOption(args, "--remove");
+      if (!add && !remove) throw new OperationError("input", "Pass --add TAG,... and/or --remove TAG,...");
+      return tagCommand(await findProjectRoot(projectOption), { ids: positionals(args, "saved keyword ids"), add, remove });
+    }
+    if (action === "rename-tag") {
+      const to = option(args, "--to");
+      const color = option(args, "--color");
+      const [name] = positionals(args, "tag name", 1);
+      return renameTagCommand(await findProjectRoot(projectOption), { name, to, color });
+    }
+    if (action === "delete-tag") {
+      const [name] = positionals(args, "tag name", 1);
+      return deleteTagCommand(await findProjectRoot(projectOption), name);
+    }
+    if (action === "refresh") {
+      rejectUnknown(args);
+      const root = await findProjectRoot(projectOption);
+      const project = await readProject(root);
+      const fetchedAt = new Date().toISOString();
+      const result = await refreshCommand(root);
+      const evidence = await saveEvidence(root, fetchedAt, { provider: "DataForSEO", fetchedAt, project, ...result });
+      return { provider: "DataForSEO", fetchedAt, updated: result.updated, costUsd: result.costUsd, evidence };
+    }
+    throw new OperationError("input", usage);
+  }
+
+  if (command === "query") {
+    const [sql] = positionals(args, "SQL statement", 1);
+    return queryStore(await findProjectRoot(projectOption), sql);
   }
 
   throw new OperationError("input", usage);

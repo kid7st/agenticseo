@@ -1,17 +1,19 @@
 // Ported from OpenSEO src/server/features/keywords/services/research/research.ts at commit
 // 0ffff93101043aad7600a3b6a499a0cd2887ef49.
 // Copyright (c) 2026 Ben Senescu. MIT License; see LICENSES/OpenSEO.txt.
-// Local changes: a ResearchContext (client ledger and file cache) replaces the
-// billing customer; organization and project ids leave the cache key because the
-// cache already lives in the project; cached trends allow null volumes; and
-// researched rows are not written to a keyword-metrics table, which arrives with
-// saved keywords.
+// Local changes: a ResearchContext (client ledger, file cache, project database)
+// replaces the billing customer; organization and project ids leave the cache key
+// because the cache already lives in the project; cached trends allow null volumes;
+// persisting researched metrics is awaited in a transaction, so a failed write
+// fails the command instead of being logged and dropped.
 import { AppError } from "../platform.js";
 import { CACHE_TTL, buildCacheKey, type Cache } from "../cache.js";
 import type { DataforseoClient } from "../dataforseo/client.js";
 import type { KeywordResearchRow } from "../types.js";
 import { z } from "zod";
 import { getKeywordDataProvider } from "../keyword-locations.js";
+import { transaction, type Store } from "../../store.js";
+import { upsertKeywordMetric } from "./savedKeywordsRepository.js";
 import { type EnrichedKeyword, normalizeKeyword } from "./helpers.js";
 import {
   fetchGoogleAdsResearchRows,
@@ -50,10 +52,10 @@ type CachedResult = ResearchResult;
 
 /**
  * What OpenSEO threads through as the billing customer: who pays and where
- * results are cached. Locally that is the call ledger's client and the
- * project's cache directory.
+ * results are cached and stored. Locally that is the call ledger's client, the
+ * project's cache directory and its database.
  */
-export type ResearchContext = { client: DataforseoClient; cache: Cache };
+export type ResearchContext = { client: DataforseoClient; cache: Cache; db: Store };
 
 /** OpenSEO's researchKeywordsSchema input after market resolution, without projectId. */
 export type ResolvedResearchKeywordsInput = {
@@ -267,6 +269,28 @@ async function buildResearchCacheKey(
   });
 }
 
+function persistRows(
+  db: Store,
+  input: ResolvedResearchKeywordsInput,
+  rows: EnrichedKeyword[],
+) {
+  transaction(db, () => {
+    for (const row of rows) {
+      upsertKeywordMetric(db, {
+        keyword: row.keyword,
+        locationCode: input.locationCode,
+        languageCode: input.languageCode,
+        searchVolume: row.searchVolume,
+        cpc: row.cpc,
+        competition: row.competition,
+        keywordDifficulty: row.keywordDifficulty,
+        intent: row.intent,
+        monthlySearchesJson: JSON.stringify(row.trend),
+      });
+    }
+  });
+}
+
 export async function research(
   input: ResolvedResearchKeywordsInput,
   context: ResearchContext,
@@ -326,6 +350,7 @@ export async function research(
           );
 
   await context.cache.set(cacheKey, result, CACHE_TTL.researchResult);
+  persistRows(context.db, effectiveInput, result.rows);
 
   return result;
 }

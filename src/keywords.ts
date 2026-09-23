@@ -5,6 +5,7 @@ import { fetchKeywordMetricsForList, type KeywordMetricRow } from "./openseo/dat
 import { getKeywordDataProvider } from "./openseo/keyword-locations.js";
 import { research } from "./openseo/keywords/research.js";
 import type { Market } from "./market.js";
+import type { Store } from "./store.js";
 
 /** OpenSEO offers clickstream only where Labs serves the market; say so instead of ignoring the flag. */
 function assertClickstreamAvailable(market: Market, clickstream: boolean) {
@@ -43,17 +44,20 @@ export async function keywordMetrics(market: Market, keywords: string[], options
   };
 }
 
-/** OpenSEO's research_keywords for one seed: auto source fallback, cached for 24 hours in the project. */
+/**
+ * OpenSEO's research_keywords for one seed: auto source fallback, cached for 24 hours in
+ * the project, with every researched keyword's metrics stored for saved keywords.
+ */
 export async function researchKeywords(
   market: Market,
   seed: string,
-  options: { resultLimit: 150 | 300 | 500; clickstream: boolean; cacheDirectory: string },
+  options: { resultLimit: 150 | 300 | 500; clickstream: boolean; cacheDirectory: string; db: Store },
 ) {
   assertClickstreamAvailable(market, options.clickstream);
   const calls: ProviderCall[] = [];
   const result = await research(
     { keywords: [seed], locationCode: market.locationCode, languageCode: market.languageCode, resultLimit: options.resultLimit, mode: "auto", clickstream: options.clickstream },
-    { client: createDataforseoClient(calls), cache: createFileCache(options.cacheDirectory) },
+    { client: createDataforseoClient(calls), cache: createFileCache(options.cacheDirectory), db: options.db },
   );
   // A cache hit makes no provider call, so nothing was spent.
   return { ...result, cached: calls.length === 0, costUsd: ledgerCost(calls), calls };
