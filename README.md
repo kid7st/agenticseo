@@ -1,6 +1,6 @@
 # AgenticSEO
 
-Open-source, local-first SEO for agents. AgenticSEO aims to make the SEO capabilities of OpenSEO available through a portable core and command interface, without requiring an OpenSEO account, MCP server, browser UI, or always-on application server. Pi is the first development client, not the only intended user.
+Open-source, local-first SEO for agents. AgenticSEO aims to bring OpenSEO's SEO capabilities to a portable core, local commands, and agent skills, without requiring an OpenSEO account, MCP server, browser UI, or always-on application server. Pi is the first development client, not the only intended user.
 
 **Status:** product and technical design only. No working CLI has been shipped yet.
 

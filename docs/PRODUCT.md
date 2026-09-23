@@ -2,9 +2,9 @@
 
 ## Goal
 
-Build an open-source, agent-first SEO product that delivers OpenSEO's SEO capabilities through a portable core and local-first commands, with project-owned data and no mandatory OpenSEO server. Full SEO capability parity is the destination; phases in the plan are delivery order, not a reduced product goal. The product must be useful to agents beyond Pi and maintainable by contributors outside its founding team.
+Build an open-source, agent-first SEO product that delivers OpenSEO's SEO capabilities through a portable core, local-first commands and portable agent skills, with project-owned data and no mandatory OpenSEO server. Full SEO capability parity is the destination; phases in the plan are delivery order, not a reduced product goal. The product must be useful to agents beyond Pi and maintainable by contributors outside its founding team.
 
-An agent should be able to inspect a project's context, buy only the data needed, execute research or audits, save the evidence, and use it to recommend or implement SEO improvements. Every capability must be usable without a browser UI. Programmatic output must remain usable without interpreting a report or scraping terminal text.
+A user asks their coding agent to investigate or improve a website. Skills guide the investigation; commands supply evidence and operations; the agent can use its existing file tools to implement changes. Every capability must be usable without a browser UI. Programmatic output must remain usable without interpreting a report or scraping terminal text.
 
 ## Users and boundaries
 
@@ -33,10 +33,10 @@ This inventory covers both OpenSEO MCP and application-only SEO features. The im
 | Reporting | Project reports, reusable briefs/templates, HTML output, listing, reading and deletion; agent skills for research/audits/reporting | `src/server/features/reports`, `src/server/mcp/tools/report-tools.ts`, `plugins/openseo/skills` |
 | Cross-feature summaries | Dashboard-style summary and opportunity prioritization from the above evidence, excluding onboarding/promotional widgets | `src/server/features/dashboard`, `src/server/features/ga4/services/SearchOpportunityService.ts` |
 
-Data access is not the same as agent workflow parity. Preserve or adapt OpenSEO's public SEO skills where useful; the CLI supplies data and operations, while the agent owns interpretation, writing, and changes to the user's website.
+Data access is not the same as agent workflow parity. Preserve or adapt OpenSEO's public SEO skills where useful; discoverable task workflows, not a flat list of commands, are the primary agent experience. Commands supply data and operations; the agent owns interpretation, writing, and changes to the user's website. A normal run should return a concise finding with provenance and a local evidence reference, and let the agent retrieve specific rows or pages only when needed. Paid operations do not require product-level budget approval or website-edit approval; those choices belong to the user and their agent.
 
 ## Acceptance definition
 
-For each inventory row, demonstrate a local invocation that produces the comparable OpenSEO result for a representative fixture or authorized live project, preserves important distinctions (target scope, market, dates, source and missing data), and leaves inspectable project-local evidence. For a mutation, verify that a second invocation can read the changed state. For a paid operation, show expected cost or an explicit spending limit before executing it.
+For each inventory row, demonstrate a local invocation that produces the comparable OpenSEO result for a representative fixture or authorized live project, preserves important distinctions (target scope, market, dates, source and missing data), and leaves inspectable project-local evidence. For a mutation, verify that a second invocation can read the changed state. Test a task from the user's request through to a concise agent reply in both Pi and Codex, without flooding their context with raw results.
 
 The final parity review must also inspect OpenSEO's application-only SEO endpoints, not just its MCP registration list. Document upstream-only behavior that cannot be reproduced because of provider access, licensing, or platform limitations rather than silently calling it complete. A public release also needs a documented install path, reproducible checks, a clear license and usable agent guidance for at least one non-Pi client.
