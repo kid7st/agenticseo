@@ -1,20 +1,8 @@
 import assert from "node:assert/strict";
-import { access, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { access, mkdir, realpath, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
-import { runCli } from "./run-cli.js";
-
-async function withProject(check: (root: string) => Promise<void>) {
-  const root = await mkdtemp(join(tmpdir(), "agenticseo-"));
-  try {
-    const init = runCli(root, ["init", "--domain", "https://example.com/", "--location", "2840", "--language", "en"]);
-    assert.equal(init.status, 0, init.stderr);
-    await check(root);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-}
+import { runCli, withProject } from "./helpers.js";
 
 test("init rejects bad input and a second initialization with the input exit code", async () => {
   await withProject(async (root) => {

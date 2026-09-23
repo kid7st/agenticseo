@@ -48,7 +48,7 @@ function firstDuplicate(values: string[]) {
 
 const sectionFields = ["businessOverview", "currentGoal", "positioning", "writingPreferences"] as const;
 
-const stateDirectory = (root: string) => join(root, ".agenticseo");
+export const stateDirectory = (root: string) => join(root, ".agenticseo");
 const projectFile = (root: string) => join(stateDirectory(root), "project.json");
 const contextFile = (root: string) => join(stateDirectory(root), "context.json");
 

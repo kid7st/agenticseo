@@ -3,10 +3,12 @@ import { resolve } from "node:path";
 import { keywordMetrics } from "./dataforseo.js";
 import { OperationError } from "./errors.js";
 import { findProjectRoot, initProject, readContext, readProject, saveEvidence } from "./project.js";
+import { listReports } from "./reports.js";
 
 const usage = `Usage:
   agenticseo init --domain example.com --location 2840 --language en [--project DIR]
   agenticseo context [--project DIR]
+  agenticseo reports [--project DIR]
   agenticseo keywords TERM... [--project DIR]`;
 
 // Documented in README.md; agents branch on these instead of parsing stderr.
@@ -39,6 +41,11 @@ async function run([command, ...args]: string[]): Promise<unknown> {
   if (command === "context") {
     rejectUnknown(args);
     return readContext(await findProjectRoot(projectOption));
+  }
+
+  if (command === "reports") {
+    rejectUnknown(args);
+    return listReports(await findProjectRoot(projectOption));
   }
 
   if (command === "keywords") {
