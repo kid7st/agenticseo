@@ -63,7 +63,6 @@ const preview = (summary: string) => (summary.length > previewChars ? `${summary
 // ponytail: lists every report with a short preview and no paging; add --limit/--offset when projects hold hundreds.
 export async function listReports(root: string) {
   const reportsDirectory = join(stateDirectory(root), "reports");
-  const templatesDirectory = join(stateDirectory(root), "templates");
   const reportNames = await fileNames(reportsDirectory);
 
   const orphan = reportNames.find((name) => name.endsWith(".html") && !reportNames.includes(name.replace(/\.html$/, ".md")));
@@ -75,9 +74,15 @@ export async function listReports(root: string) {
     return { file, html, title, summary: preview(summary), updatedAt, bytes };
   }));
   reports.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return { reportsDirectory, reports };
+}
 
-  const templates = (await readDocuments(templatesDirectory, await fileNames(templatesDirectory)))
-    .map(({ file, title, summary }) => ({ file, title, summary: preview(summary) }));
-
-  return { reportsDirectory, templatesDirectory, reports, templates };
+/**
+ * Report templates in OpenSEO's shape (name and description). Like upstream, they are
+ * listed with the project context, the one block every skill reads first.
+ */
+export async function listTemplates(root: string) {
+  const directory = join(stateDirectory(root), "templates");
+  const templates = await readDocuments(directory, await fileNames(directory));
+  return templates.map(({ file, title, summary }) => ({ name: title, description: preview(summary), file }));
 }

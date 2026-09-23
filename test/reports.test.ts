@@ -1,30 +1,26 @@
 import assert from "node:assert/strict";
-import { mkdir, realpath, rm, utimes, writeFile } from "node:fs/promises";
+import { mkdir, rm, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { runCli, withProject } from "./helpers.js";
 
 type Listing = {
   reports: Array<{ file: string; html: string | null; title: string; summary: string }>;
-  templates: Array<{ file: string; title: string; summary: string }>;
 };
 
 const report = (title: string, summary: string) => `# ${title}\n\n${summary}\n\n## Findings\n\nDetails.\n`;
 
-test("reports lists saved reports newest first with previews, HTML exports and templates", async () => {
+test("reports lists saved reports newest first with previews and HTML exports", async () => {
   await withProject(async (root) => {
     const empty = runCli(root, ["reports"]);
     assert.equal(empty.status, 0, empty.stderr);
     assert.deepEqual((JSON.parse(empty.stdout) as Listing).reports, []);
 
     const reports = join(root, ".agenticseo", "reports");
-    const templates = join(root, ".agenticseo", "templates");
     await mkdir(reports, { recursive: true });
-    await mkdir(templates);
     await writeFile(join(reports, "audit.md"), report("Site Audit — Sep 1, 2026", "Verdict: fix canonicals first."));
     await writeFile(join(reports, "keywords.md"), report("Keyword Snapshot — Sep 23, 2026", "x".repeat(300)));
     await writeFile(join(reports, "keywords.html"), "<!doctype html><html><body>Report</body></html>\n");
-    await writeFile(join(templates, "monthly.md"), "# Monthly client report\n\nOne verdict, three numbers, one action.\n");
     await utimes(join(reports, "audit.md"), new Date("2026-09-01"), new Date("2026-09-01"));
 
     const listed = runCli(root, ["reports"]);
@@ -35,7 +31,6 @@ test("reports lists saved reports newest first with previews, HTML exports and t
     assert.equal(output.reports[1].html, null);
     assert.equal(output.reports[0].summary.length, 241, "long summaries are cut to a preview");
     assert.equal(output.reports[1].summary, "Verdict: fix canonicals first.");
-    assert.deepEqual(output.templates, [{ file: await realpath(join(templates, "monthly.md")), title: "Monthly client report", summary: "One verdict, three numbers, one action." }]);
   });
 });
 

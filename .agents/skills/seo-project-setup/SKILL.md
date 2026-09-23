@@ -9,14 +9,15 @@ Interview the user once about one website and store the durable answers in the p
 
 1. Run `agenticseo context`. If it fails with exit code 2 because no project exists, ask for the site and target market and run `agenticseo init --domain DOMAIN --location LOCATION_CODE --language LANGUAGE_CODE` in the website's repository root. Use DataForSEO location codes; never guess the market.
 2. Show the user what is already recorded and which `missingSections` are empty. Confirm or correct existing entries rather than asking again.
-3. Ask in small batches, then write the answers to the `file` path from step 1 (`.agenticseo/context.json`):
-   - `businessOverview`: what the business does, who it serves, markets and languages, and whether the site is new, established, migrating or recovering.
-   - `currentGoal`: the SEO outcome with a metric and timeframe, for example "rank top 10 for 20 buying-intent terms by Q4".
-   - `positioning`: audience, problem, differentiator, and claims the user wants defended.
-   - `writingPreferences`: voice, banned words and topics to avoid.
+3. Ask in small batches, then write the answers to the `file` path from step 1 (`.agenticseo/context.json`). Write as the interview progresses, not all at the end:
+   - `sections.business_overview`: what the business does, who it serves, markets and languages, and whether the site is new, established, migrating or recovering.
+   - `sections.current_goal`: the SEO outcome with a metric and timeframe, for example "rank top 10 for 20 buying-intent terms by Q4".
+   - `sections.positioning`: audience, problem, differentiator, and claims the user wants defended.
+   - `sections.writing_preferences`: voice, banned words and topics to avoid.
    - `competitors`: `[{ "domain", "name"?, "notes"? }]`, one entry per domain, with why it matters.
    - `keyPages`: `[{ "url", "role"?: "hub" | "spoke" | "money" | "other", "topic"?, "notes"? }]`, a shortlist of 10 to 30 pages that matter, not a site inventory.
-   - `customSections`: `{ "slug": { "title", "content" } }` for anything that does not fit above.
-   Each prose field holds up to 4,000 characters: a few tight paragraphs, not a transcript. Record only facts the user confirmed.
-4. Run `agenticseo context` again after each write. Exit code 2 names the invalid field; fix the file and rerun until it succeeds.
-5. Reply with a short summary of what was recorded and what is still missing, and suggest one next task, such as a keyword snapshot for a key page.
+   - `customSections`: `{ "slug": { "title"?, "content" } }` for anything that does not fit above, at most 20.
+   Each prose section holds up to 4,000 characters: a few tight paragraphs, not a transcript. An empty string means the section is missing. Record only facts the user confirmed.
+4. Run `agenticseo context` again after each write. Exit code 2 names the invalid field; fix the file and rerun until it succeeds. The output shows competitor domains and page URLs in canonical form; two entries that normalize to the same domain or URL are rejected.
+5. If this session spent money on a provider, append `{ "entryDate": "YYYY-MM-DD", "summary": "<what>: <inputs>. Verdict: <conclusion>" }` to `researchLog` with today's date.
+6. Reply with a short summary of what was recorded and what is still missing, and suggest one next task, such as a keyword snapshot for a key page.
