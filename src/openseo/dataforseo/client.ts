@@ -11,10 +11,13 @@ import {
 } from "./envelope.js";
 import { fetchAdsKeywordIdeas, fetchAdsSearchVolume } from "./google-ads.js";
 import {
+  fetchDomainRankOverview,
   fetchKeywordIdeas,
   fetchKeywordOverview,
   fetchKeywordSuggestions,
+  fetchRankedKeywords,
   fetchRelatedKeywords,
+  fetchSerpCompetitors,
 } from "./labs.js";
 import { fetchLiveSerp } from "./serp.js";
 
@@ -54,11 +57,16 @@ export function createDataforseoClient(ledger: ProviderCall[]) {
       adsIdeas: meter(ledger, fetchAdsKeywordIdeas),
       adsSearchVolume: meter(ledger, fetchAdsSearchVolume),
     },
+    domain: {
+      rankOverview: meter(ledger, fetchDomainRankOverview),
+      rankedKeywords: meter(ledger, fetchRankedKeywords),
+    },
     serp: {
       live: meter(ledger, fetchLiveSerp),
     },
     labs: {
       keywordOverview: meter(ledger, fetchKeywordOverview),
+      serpCompetitors: meter(ledger, fetchSerpCompetitors),
     },
   } as const;
 }

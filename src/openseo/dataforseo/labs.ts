@@ -1,5 +1,5 @@
 // Ported from OpenSEO src/server/lib/dataforseo/labs.ts at commit
-// 0ffff93101043aad7600a3b6a499a0cd2887ef49 (keyword overview and keyword research subset).
+// 0ffff93101043aad7600a3b6a499a0cd2887ef49 (keyword, domain and SERP competitor subset).
 // Copyright (c) 2026 Ben Senescu. MIT License; see LICENSES/OpenSEO.txt.
 // Local change: items are validated with loose Zod schemas of the fields the
 // callers read, so every other field is kept.
@@ -59,6 +59,96 @@ type RelatedKeywordItem = {
   [key: string]: unknown;
 };
 
+type LabsMetricsBlock = {
+  organic?: { etv?: number | null; count?: number | null } | null;
+  [key: string]: unknown;
+};
+
+type DomainMetricsItem = {
+  metrics?: LabsMetricsBlock | null;
+  [key: string]: unknown;
+};
+
+export interface RelevantPagesItem {
+  page_address?: string | null;
+  metrics?: LabsMetricsBlock | null;
+  [key: string]: unknown;
+}
+
+type SerpCompetitorItem = {
+  domain?: string | null;
+  avg_position?: number | null;
+  median_position?: number | null;
+  visibility?: number | null;
+  etv?: number | null;
+  keywords_count?: number | null;
+  [key: string]: unknown;
+};
+
+// Ranked keywords is the one Labs endpoint the SDK types loosely: its
+// `ranked_serp_element.serp_item` is the base element item, so the url / etv /
+// rank fields we read are untyped (`any`). Keep a focused schema so the
+// domain-keyword mapper stays type-safe.
+const rankedSerpItemSchema = z
+  .object({
+    url: z.string().nullable().optional(),
+    relative_url: z.string().nullable().optional(),
+    rank_absolute: z.number().nullable().optional(),
+    etv: z.number().nullable().optional(),
+  })
+  .passthrough();
+
+const domainRankedKeywordItemSchema = z
+  .object({
+    keyword_data: z
+      .object({
+        keyword: z.string().nullable().optional(),
+        keyword_info: z
+          .object({
+            search_volume: z.number().nullable().optional(),
+            cpc: z.number().nullable().optional(),
+            keyword_difficulty: z.number().nullable().optional(),
+          })
+          .passthrough()
+          .nullable()
+          .optional(),
+        keyword_properties: z
+          .object({
+            keyword_difficulty: z.number().nullable().optional(),
+          })
+          .passthrough()
+          .nullable()
+          .optional(),
+      })
+      .passthrough()
+      .nullable()
+      .optional(),
+    ranked_serp_element: z
+      .object({
+        serp_item: rankedSerpItemSchema.nullable().optional(),
+        url: z.string().nullable().optional(),
+        relative_url: z.string().nullable().optional(),
+        rank_absolute: z.number().nullable().optional(),
+        etv: z.number().nullable().optional(),
+      })
+      .passthrough()
+      .nullable()
+      .optional(),
+    keyword: z.string().nullable().optional(),
+  })
+  .passthrough();
+
+export type DomainRankedKeywordItem = z.infer<
+  typeof domainRankedKeywordItemSchema
+>;
+
+type DataforseoLabsItemType =
+  | "organic"
+  | "paid"
+  | "featured_snippet"
+  | "local_pack"
+  | "ai_overview_reference";
+
 const nullableNumber = z.number().nullable().optional();
 
 const labsKeywordInfoSchema = z.looseObject({
@@ -99,6 +189,97 @@ const keywordDataItemSchema = z.looseObject({
 const relatedKeywordItemSchema = z.looseObject({
   keyword_data: keywordDataItemSchema.nullable().optional(),
 });
+
+const domainMetricsItemSchema = z.looseObject({
+  metrics: z
+    .looseObject({
+      organic: z
+        .looseObject({ etv: nullableNumber, count: nullableNumber })
+        .nullable()
+        .optional(),
+    })
+    .nullable()
+    .optional(),
+});
+
+const serpCompetitorItemSchema = z.looseObject({
+  domain: z.string().nullable().optional(),
+  avg_position: nullableNumber,
+  median_position: nullableNumber,
+  visibility: nullableNumber,
+  etv: nullableNumber,
+  keywords_count: nullableNumber,
+});
+
+export async function fetchDomainRankOverview(input: {
+  target: string;
+  locationCode: number;
+  languageCode: string;
+}): Promise<DataforseoApiResponse<DomainMetricsItem[]>> {
+  const response = await dataforseoPost<DataforseoItemsTask<DomainMetricsItem>>(
+    "/v3/dataforseo_labs/google/domain_rank_overview/live",
+    [
+      {
+        target: input.target,
+        location_code: input.locationCode,
+        language_code: input.languageCode,
+        limit: 1,
+      },
+    ],
+  );
+  const task = assertOk(response);
+  return {
+    data: parseTaskItems("domain_rank_overview", task, domainMetricsItemSchema),
+    billing: buildTaskBilling(task),
+  };
+}
+
+type RankedKeywordsPage = {
+  items: DomainRankedKeywordItem[];
+  totalCount: number | null;
+};
+
+export async function fetchRankedKeywords(input: {
+  target: string;
+  locationCode: number;
+  languageCode: string;
+  limit: number;
+  offset?: number;
+  orderBy?: string[];
+  filters?: unknown[];
+  itemTypes?: DataforseoLabsItemType[];
+}): Promise<DataforseoApiResponse<RankedKeywordsPage>> {
+  // Note: ranked_keywords has no include_subdomains parameter — a domain
+  // target always covers the hostname plus its subdomains. Narrower scopes
+  // are expressed through `filters` (see researchScopeFilters.ts).
+  const response = await dataforseoPost<DataforseoItemsTask<unknown>>(
+    "/v3/dataforseo_labs/google/ranked_keywords/live",
+    [
+      {
+        target: input.target,
+        location_code: input.locationCode,
+        language_code: input.languageCode,
+        limit: input.limit,
+        offset: input.offset,
+        order_by: input.orderBy,
+        filters: input.filters,
+        item_types: input.itemTypes,
+      },
+    ],
+  );
+  const task = assertOk(response);
+  return {
+    data: {
+      items: parseTaskItems(
+        "google-ranked-keywords-live",
+        task,
+        domainRankedKeywordItemSchema,
+      ),
+      totalCount: task.result?.[0]?.total_count ?? null,
+    },
+    billing: buildTaskBilling(task),
+  };
+}
 
 export async function fetchRelatedKeywords(input: {
   keyword: string;
@@ -206,6 +387,35 @@ export async function fetchKeywordOverview(input: {
   const task = assertOk(response);
   return {
     data: parseTaskItems("keyword_overview", task, keywordDataItemSchema),
+    billing: buildTaskBilling(task),
+  };
+}
+
+export async function fetchSerpCompetitors(input: {
+  keywords: string[];
+  locationCode: number;
+  languageCode: string;
+  itemTypes?: DataforseoLabsItemType[];
+  includeSubdomains?: boolean;
+  limit: number;
+  offset?: number;
+}): Promise<DataforseoApiResponse<SerpCompetitorItem[]>> {
+  const response = await dataforseoPost<
+    DataforseoItemsTask<SerpCompetitorItem>
+  >("/v3/dataforseo_labs/google/serp_competitors/live", [
+    {
+      keywords: input.keywords,
+      location_code: input.locationCode,
+      language_code: input.languageCode,
+      item_types: input.itemTypes,
+      include_subdomains: input.includeSubdomains,
+      limit: input.limit,
+      offset: input.offset,
+    },
+  ]);
+  const task = assertOk(response);
+  return {
+    data: parseTaskItems("serp_competitors", task, serpCompetitorItemSchema),
     billing: buildTaskBilling(task),
   };
 }

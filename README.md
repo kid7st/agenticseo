@@ -2,7 +2,7 @@
 
 Open-source, local-first SEO for agents. AgenticSEO aims to bring OpenSEO's SEO capabilities to a portable core, local commands, and agent skills, without requiring an OpenSEO account, MCP server, browser UI, or always-on application server. Pi is the first development client, not the only intended user.
 
-**Status:** early prototype. Project setup, project context, local reports, keyword metrics, keyword research and live SERPs are implemented; the full [OpenSEO capability inventory](docs/PRODUCT.md) remains the goal.
+**Status:** early prototype. Project setup, project context, local reports, keyword metrics, keyword research, live SERPs and domain research are implemented; the full [OpenSEO capability inventory](docs/PRODUCT.md) remains the goal.
 
 - [Product and capability inventory](docs/PRODUCT.md)
 - [Technical design](docs/DESIGN.md)
@@ -34,6 +34,11 @@ agenticseo reports
 - `research "SEED" [--limit 150|300|500] [--clickstream]` runs OpenSEO's keyword research for one seed: DataForSEO Labs related keywords, falling back to suggestions and then ideas until at least five non-seed keywords are found, or Google Ads keyword ideas where Labs does not cover the market. It returns the first 25 rows; a repeat within 24 hours comes from `.agenticseo/cache/` at no cost (`cached: true`).
 - `keywords TERM... [--clickstream]` returns volume, CPC, competition, keyword difficulty and intent for up to 700 terms, from Labs keyword overview or, outside Labs markets, Google Ads search volume. Terms with no metric at all are listed in `missingKeywords`.
 - `serp "QUERY" [--depth 10-100]` returns live Google results of every type (default depth 20), trimmed to type, rank, title, URL, domain and description.
+- `domain TARGET [--scope SCOPE]` returns a domain's estimated organic traffic and ranking-keyword count (OpenSEO's `get_domain_overview`, cached 12 hours). The metrics always cover the host and its subdomains; `scope` only labels the request.
+- `ranked TARGET` lists the keywords a domain or page ranks for, with position, volume, traffic, CPC, difficulty and URL (OpenSEO's `get_ranked_keywords`). `--scope` narrows to `domain` (no subdomains), `subfolder` or `exact_url`; a path must be given as an absolute URL. Filters: `--min-volume`, `--max-rank`, `--exclude` (brand terms), `--types`; `--sort`; `--limit` (default 50) and `--offset`, with `totalCount` and `nextOffset` in the result. OpenSEO's keyword suggestions for a domain are `ranked TARGET --sort traffic_estimate --limit 100`.
+- `competitors KEYWORD...` compares the domains ranking across up to 100 keywords' SERPs (OpenSEO's `find_serp_competitors`), sorted by visibility; `--exclude-domains` drops your own site and its subdomains.
+
+Domain commands need a market DataForSEO Labs serves. Where OpenSEO would quietly switch such a project to the United States, AgenticSEO exits 2 so you choose the market with `--location`.
 
 `keywords`, `research` and `serp` take `--location` and `--language` to run one call in another market; as in OpenSEO, changing only the location switches to that country's language. Paid commands report `source` (which DataForSEO API answered), date, the resolved `market` and `costUsd`, and save an evidence file under `.agenticseo/evidence/` with all rows, monthly trends and the raw provider items of each call. Evidence and cache are ignored by Git; context and reports are meant to be versioned with the site. Missing metrics stay `null`, never 0. Google Ads markets have no keyword difficulty or intent. `--clickstream` asks Labs for clickstream-refined volume at twice the cost and is refused for Google Ads markets. If the key is missing, a paid command fails without a lookup.
 

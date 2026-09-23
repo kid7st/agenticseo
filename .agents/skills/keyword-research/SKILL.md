@@ -30,7 +30,10 @@ Use the installed `agenticseo` command. If it is not on PATH, tell the user how 
 
 Every result states `source`, date, market and `costUsd`, and points to an `evidence` file; read rows from that file (for example with `jq`) instead of rerunning a paid command. When `source` is `google_ads`, the market is not covered by DataForSEO Labs, so difficulty and intent are unavailable.
 
-Not available yet in AgenticSEO: ranked keywords for a domain, Search Console data, local SEO lookups and saved keyword lists. Say so when the task needs them; do not approximate them.
+- `agenticseo ranked TARGET [--scope ...] [--max-rank N] [--min-volume N] [--exclude BRAND,...]`: the keywords a domain or page already ranks for, when a target site or competitor is part of the brief. Use it for near-miss terms (for example `--max-rank 20` on the user's own site) and competitor-owned terms.
+- `agenticseo competitors KEYWORD...`: which domains compete across the candidate terms' SERPs.
+
+Not available yet in AgenticSEO: Search Console data, local SEO lookups and saved keyword lists. Say so when the task needs them; do not approximate them.
 
 ## Workflow
 
