@@ -12,7 +12,8 @@ const project = { domain: "example.com", locationCode: 2840, languageCode: "en" 
 
 function fakeFetch(body: unknown): typeof fetch {
   return async (_url, init) => {
-    assert.equal(init?.method, "POST");
+    assert.ok(init, "fetch was called without request options");
+    assert.equal(init.method, "POST");
     assert.equal(new Headers(init.headers).get("Authorization"), "Basic TEST_KEY");
     assert.deepEqual(JSON.parse(String(init.body)), [{ keywords: ["seo audit", "seo tool"], location_code: 2840, language_code: "en", include_clickstream_data: false }]);
     return Response.json(body);

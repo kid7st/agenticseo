@@ -11,7 +11,7 @@ Open-source, local-first SEO for agents. AgenticSEO aims to bring OpenSEO's SEO 
 
 ## Try the first local workflow
 
-Requires Node.js 22+, a DataForSEO account, and a base64-encoded DataForSEO `login:password` in `DATAFORSEO_API_KEY`. DataForSEO charges for live lookups. No OpenSEO server or account is needed.
+Requires Node.js 24+, a DataForSEO account, and a base64-encoded DataForSEO `login:password` in `DATAFORSEO_API_KEY`. DataForSEO charges for live lookups. No OpenSEO server or account is needed.
 
 ```sh
 npm install

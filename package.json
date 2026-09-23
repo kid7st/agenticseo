@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": { "node": ">=24" },
   "bin": { "agenticseo": "./dist/src/cli.js" },
   "scripts": {
     "build": "tsc",
@@ -12,8 +12,8 @@
   },
   "dependencies": { "zod": "^4.1.12" },
   "devDependencies": {
-    "@types/node": "^22.18.13",
+    "@types/node": "^24.10.3",
     "tsx": "^4.22.4",
-    "typescript": "^5.9.3"
+    "typescript": "^7.0.2"
   }
 }
