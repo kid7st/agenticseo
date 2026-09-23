@@ -5,33 +5,12 @@ import { join } from "node:path";
 import test from "node:test";
 import { OperationError } from "../src/errors.js";
 import { keywordMetrics } from "../src/keywords.js";
-import { runCli } from "./helpers.js";
+import { runCli, withFetch, type Handler } from "./helpers.js";
 
 const fixture = JSON.parse(await readFile(new URL("./keyword-overview.json", import.meta.url), "utf8")) as Record<string, unknown>;
 const project = { domain: "example.com", locationCode: 2840, languageCode: "en" };
 const labsUrl = "https://api.dataforseo.com/v3/dataforseo_labs/google/keyword_overview/live";
 const adsUrl = "https://api.dataforseo.com/v3/keywords_data/google_ads/search_volume/live";
-
-type Handler = (url: string, init: RequestInit) => Response | Promise<Response>;
-
-/** Swaps global fetch (the ported client calls it directly) and records each request. */
-async function withFetch<T>(handler: Handler, run: () => Promise<T>, apiKey = "TEST_KEY") {
-  const requests: Array<{ url: string; body: unknown; authorization: string | null }> = [];
-  const original = globalThis.fetch;
-  const originalKey = process.env.DATAFORSEO_API_KEY;
-  process.env.DATAFORSEO_API_KEY = apiKey;
-  globalThis.fetch = async (input, init = {}) => {
-    const url = String(input);
-    requests.push({ url, body: JSON.parse(String(init.body)), authorization: new Headers(init.headers).get("Authorization") });
-    return handler(url, init);
-  };
-  try {
-    return { result: await run(), requests };
-  } finally {
-    globalThis.fetch = original;
-    process.env.DATAFORSEO_API_KEY = originalKey;
-  }
-}
 
 const taskResponse = (task: Record<string, unknown>) => Response.json({ status_code: 20000, tasks: [{ path: ["v3", "x"], ...task }] });
 
@@ -52,7 +31,7 @@ test("maps Labs metrics without inventing missing values and records the raw cal
   ]);
   assert.deepEqual(result.missingKeywords, ["seo tool"], "a row with no metric at all counts as missing");
   assert.equal(result.costUsd, 0.01);
-  assert.equal(result.calls[0].items.length, 2, "raw items are kept for evidence");
+  assert.equal((result.calls[0].items as unknown[]).length, 2, "raw items are kept for evidence");
 });
 
 test("routes Google-Ads-only markets to search volume, as OpenSEO does", async () => {
@@ -84,7 +63,8 @@ test("classifies credential, transport, task and payload failures", async () => 
     ["network", () => { throw new TypeError("fetch failed"); }, "provider", /request failed .*fetch failed/],
     ["not JSON", () => new Response("<html>", { status: 200 }), "provider", /not JSON/],
     ["charged task failure", () => taskResponse({ status_code: 40101, status_message: "Internal SE Server Error.", cost: 0.01 }), "provider", /Internal SE Server Error\. \(charged \$0\.01\)/],
-    ["invalid market", () => taskResponse({ status_code: 40501, status_message: "Invalid Field: 'location_code'.", cost: 0, data: { location_code: 1 } }), "input", /location_code=1\) \(charged \$0\)/],
+    ["unbilled invalid market", () => taskResponse({ status_code: 40501, status_message: "Invalid Field: 'location_code'.", cost: 0, data: { location_code: 1 } }), "input", /\(sent location_code=1\)$/],
+    ["billed invalid field", () => taskResponse({ status_code: 40501, status_message: "Invalid Field: 'keywords'.", cost: 0.01 }), "provider", /Invalid Field: 'keywords'\. \(charged \$0\.01\)/],
     ["invalid item shape", () => taskResponse({ status_code: 20000, cost: 0.01, result: [{ items: [{ keyword: 7 }] }] }), "provider", /invalid response shape: 0\.keyword/],
   ];
   for (const [name, handler, kind, message, apiKey] of cases) {

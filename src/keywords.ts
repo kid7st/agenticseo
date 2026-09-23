@@ -1,30 +1,16 @@
 import { OperationError } from "./errors.js";
-import { DataforseoChargedTaskError, type DataforseoApiResponse } from "./openseo/dataforseo/envelope.js";
-import { fetchAdsSearchVolume } from "./openseo/dataforseo/google-ads.js";
-import { fetchKeywordMetricsForList, type KeywordMetricRow, type KeywordMetricsClient } from "./openseo/dataforseo/keyword-metrics.js";
-import { fetchKeywordOverview } from "./openseo/dataforseo/labs.js";
+import { createFileCache } from "./openseo/cache.js";
+import { createDataforseoClient, ledgerCost, type ProviderCall } from "./openseo/dataforseo/client.js";
+import { fetchKeywordMetricsForList, type KeywordMetricRow } from "./openseo/dataforseo/keyword-metrics.js";
 import { getKeywordDataProvider } from "./openseo/keyword-locations.js";
+import { research } from "./openseo/keywords/research.js";
 import type { Project } from "./project.js";
 
-type ProviderCall = { path: string[]; costUsd: number; items: unknown[] };
-
-/**
- * Wraps a section fetcher the way OpenSEO's metered client does, but records the
- * call's cost and raw items as local evidence instead of charging credits.
- */
-function recorded<I, T extends unknown[]>(calls: ProviderCall[], fetcher: (input: I) => Promise<DataforseoApiResponse<T>>) {
-  return async (input: I): Promise<T> => {
-    try {
-      const { data, billing } = await fetcher(input);
-      calls.push({ ...billing, items: data });
-      return data;
-    } catch (error) {
-      if (!(error instanceof DataforseoChargedTaskError)) throw error;
-      // DataForSEO billed a failed task; the cost must stay visible. "Invalid Field"
-      // means our request (the project's market) was wrong, which the user fixes.
-      throw new OperationError(error.isInvalidField ? "input" : "provider", `${error.message} (charged $${error.billing.costUsd})`, { cause: error });
-    }
-  };
+/** OpenSEO offers clickstream only where Labs serves the market; say so instead of ignoring the flag. */
+function assertClickstreamAvailable(project: Project, clickstream: boolean) {
+  if (clickstream && getKeywordDataProvider(project.locationCode) !== "labs") {
+    throw new OperationError("input", "--clickstream applies only to markets served by DataForSEO Labs");
+  }
 }
 
 /**
@@ -38,16 +24,9 @@ function hasMetrics(row: KeywordMetricRow) {
 }
 
 export async function keywordMetrics(project: Project, keywords: string[], options: { includeClickstreamData: boolean }) {
-  const source = getKeywordDataProvider(project.locationCode);
-  if (options.includeClickstreamData && source !== "labs") {
-    throw new OperationError("input", "--clickstream applies only to markets served by DataForSEO Labs");
-  }
+  assertClickstreamAvailable(project, options.includeClickstreamData);
   const calls: ProviderCall[] = [];
-  const client: KeywordMetricsClient = {
-    labs: { keywordOverview: recorded(calls, fetchKeywordOverview) },
-    keywords: { adsSearchVolume: recorded(calls, fetchAdsSearchVolume) },
-  };
-  const allRows = await fetchKeywordMetricsForList(client, {
+  const allRows = await fetchKeywordMetricsForList(createDataforseoClient(calls), {
     keywords,
     locationCode: project.locationCode,
     languageCode: project.languageCode,
@@ -56,11 +35,44 @@ export async function keywordMetrics(project: Project, keywords: string[], optio
   const rows = allRows.filter(hasMetrics);
   const returned = new Set(rows.map((row) => row.keyword.toLowerCase()));
   return {
-    source,
+    source: getKeywordDataProvider(project.locationCode),
     rows,
     missingKeywords: keywords.filter((keyword) => !returned.has(keyword.toLowerCase())),
-    // Rounded to DataForSEO's precision so summed float costs do not print as 0.030000000000000002.
-    costUsd: Math.round(calls.reduce((sum, call) => sum + call.costUsd, 0) * 1e6) / 1e6,
+    costUsd: ledgerCost(calls),
+    calls,
+  };
+}
+
+/** OpenSEO's research_keywords for one seed: auto source fallback, cached for 24 hours in the project. */
+export async function researchKeywords(
+  project: Project,
+  seed: string,
+  options: { resultLimit: 150 | 300 | 500; clickstream: boolean; cacheDirectory: string },
+) {
+  assertClickstreamAvailable(project, options.clickstream);
+  const calls: ProviderCall[] = [];
+  const result = await research(
+    { keywords: [seed], locationCode: project.locationCode, languageCode: project.languageCode, resultLimit: options.resultLimit, mode: "auto", clickstream: options.clickstream },
+    { client: createDataforseoClient(calls), cache: createFileCache(options.cacheDirectory) },
+  );
+  // A cache hit makes no provider call, so nothing was spent.
+  return { ...result, cached: calls.length === 0, costUsd: ledgerCost(calls), calls };
+}
+
+/** OpenSEO's get_serp_results for one query, trimmed to the same fields its MCP tool returns. */
+export async function serpResults(project: Project, keyword: string, depth: number) {
+  const calls: ProviderCall[] = [];
+  const items = await createDataforseoClient(calls).serp.live({ keyword, locationCode: project.locationCode, languageCode: project.languageCode, depth });
+  return {
+    items: items.slice(0, depth).map((item) => ({
+      type: item.type,
+      rank: item.rank_absolute ?? item.rank_group ?? null,
+      title: item.title ?? null,
+      url: item.url ?? null,
+      domain: item.domain ?? null,
+      description: item.description ?? null,
+    })),
+    costUsd: ledgerCost(calls),
     calls,
   };
 }

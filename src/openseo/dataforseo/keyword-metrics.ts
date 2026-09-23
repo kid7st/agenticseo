@@ -1,39 +1,21 @@
 // Ported from OpenSEO src/server/lib/dataforseo/keyword-metrics.ts at commit
 // 0ffff93101043aad7600a3b6a499a0cd2887ef49.
 // Copyright (c) 2026 Ben Senescu. MIT License; see LICENSES/OpenSEO.txt.
-// Local changes: a missing monthly search volume is null instead of 0; the
-// client type is declared here and the credit-attribution parameter is removed,
-// since there is no hosted metering.
+// Local changes: a missing monthly search volume is null instead of 0, and the
+// credit-attribution parameter is removed, since there is no hosted metering.
+import type { createDataforseoClient } from "./client.js";
 import type { AdsKeywordItem } from "./google-ads.js";
 import type { KeywordOverviewItem } from "./labs.js";
 import { getKeywordDataProvider } from "../keyword-locations.js";
+import type { MonthlySearch } from "../types.js";
 
-// A missing monthly volume stays unknown; OpenSEO's type forces a number.
-type MonthlySearch = {
-  year: number;
-  month: number;
-  searchVolume: number | null;
-};
 
-// The two endpoints the helper uses. OpenSEO derives this from its metered
-// client; the local caller supplies functions that return each call's items.
-export type KeywordMetricsClient = {
-  labs: {
-    keywordOverview(input: {
-      keywords: string[];
-      locationCode: number;
-      languageCode: string;
-      includeClickstreamData: boolean;
-    }): Promise<KeywordOverviewItem[]>;
-  };
-  keywords: {
-    adsSearchVolume(input: {
-      keywords: string[];
-      locationCode: number;
-      locationName?: string;
-      languageCode: string;
-    }): Promise<AdsKeywordItem[]>;
-  };
+type DataforseoClient = ReturnType<typeof createDataforseoClient>;
+
+// Narrowed to the two endpoints the helper uses, so tests can fake it cheaply.
+type KeywordMetricsClient = {
+  labs: Pick<DataforseoClient["labs"], "keywordOverview">;
+  keywords: Pick<DataforseoClient["keywords"], "adsSearchVolume">;
 };
 
 // DataForSEO's batch metric endpoints accept up to ~700 keywords per request.

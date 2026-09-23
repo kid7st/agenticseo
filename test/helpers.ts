@@ -30,3 +30,24 @@ export async function withProject(check: (root: string) => Promise<void>) {
     await rm(root, { recursive: true, force: true });
   }
 }
+
+export type Handler = (url: string, init: RequestInit) => Response | Promise<Response>;
+
+/** Swaps global fetch (the ported client calls it directly) and records each request. */
+export async function withFetch<T>(handler: Handler, run: () => Promise<T>, apiKey = "TEST_KEY") {
+  const requests: Array<{ url: string; body: unknown; authorization: string | null }> = [];
+  const original = globalThis.fetch;
+  const originalKey = process.env.DATAFORSEO_API_KEY;
+  process.env.DATAFORSEO_API_KEY = apiKey;
+  globalThis.fetch = async (input, init = {}) => {
+    const url = String(input);
+    requests.push({ url, body: JSON.parse(String(init.body)), authorization: new Headers(init.headers).get("Authorization") });
+    return handler(url, init);
+  };
+  try {
+    return { result: await run(), requests };
+  } finally {
+    globalThis.fetch = original;
+    process.env.DATAFORSEO_API_KEY = originalKey;
+  }
+}

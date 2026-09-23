@@ -139,7 +139,7 @@ export async function initProject(root: string, input: { domain?: string; locati
   const target = parseResearchTarget(input.domain ?? "", "domain");
   if (!target.ok) throw new OperationError("input", `--domain: ${target.message}`);
   const project = validate(projectSchema, { ...input, domain: target.target.hostname }, "Project settings");
-  await ensureEvidenceDirectory(root);
+  await ensureIgnoredDirectory(root, "evidence");
   try {
     await writeFile(projectFile(root), `${JSON.stringify(project, null, 2)}\n`, { flag: "wx" });
   } catch (error) {
@@ -172,8 +172,9 @@ export async function readContext(root: string) {
   };
 }
 
-async function ensureEvidenceDirectory(root: string) {
-  const directory = join(stateDirectory(root), "evidence");
+/** A directory of generated data under .agenticseo that Git ignores by default. */
+async function ensureIgnoredDirectory(root: string, name: "evidence" | "cache") {
+  const directory = join(stateDirectory(root), name);
   await mkdir(directory, { recursive: true });
   try {
     await writeFile(join(directory, ".gitignore"), "*\n!.gitignore\n", { flag: "wx" });
@@ -183,9 +184,14 @@ async function ensureEvidenceDirectory(root: string) {
   return directory;
 }
 
+/** Where provider responses are cached, as OpenSEO caches them in R2. */
+export function cacheDirectory(root: string) {
+  return ensureIgnoredDirectory(root, "cache");
+}
+
 /** Writes one evidence record atomically and returns its path. */
 export async function saveEvidence(root: string, fetchedAt: string, record: object) {
-  const directory = await ensureEvidenceDirectory(root);
+  const directory = await ensureIgnoredDirectory(root, "evidence");
   const file = join(directory, `${fetchedAt.replaceAll(":", "-")}-${randomUUID()}.json`);
   await writeFile(`${file}.tmp`, `${JSON.stringify(record, null, 2)}\n`, { flag: "wx" });
   await rename(`${file}.tmp`, file);
