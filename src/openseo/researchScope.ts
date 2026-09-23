@@ -3,6 +3,7 @@
 // try/new URL).
 // Copyright (c) 2026 Ben Senescu. MIT License; see LICENSES/OpenSEO.txt.
 import { parse as parseTld } from "tldts";
+import { z } from "zod";
 
 /**
  * True when `host` resolves to a real registrable domain (public-suffix list),
@@ -32,6 +33,8 @@ export const RESEARCH_SCOPES = [
 ] as const;
 
 export type ResearchScope = (typeof RESEARCH_SCOPES)[number];
+
+export const researchScopeSchema = z.enum(RESEARCH_SCOPES);
 
 export type ResearchTarget = {
   scope: ResearchScope;
