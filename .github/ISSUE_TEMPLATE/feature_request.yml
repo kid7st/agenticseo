@@ -1,0 +1,24 @@
+name: Feature request
+description: Propose a new agent-first SEO capability or workflow.
+title: "feat: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: User need
+      description: What SEO task should an agent be able to finish? Include the target market and data source when relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What evidence should the command or skill return or save? Link the matching OpenSEO capability if one exists.
+    validations:
+      required: true
+  - type: textarea
+    id: alternative
+    attributes:
+      label: Simpler alternative
+      description: Can existing commands, skills, or native agent tools already solve it?
