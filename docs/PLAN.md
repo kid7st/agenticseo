@@ -47,7 +47,7 @@ Full SEO capability parity with OpenSEO is the target. Finish each phase with ru
 - Adapt OpenSEO's public agent skills to call local operations, including project setup, audits, keyword research/clustering, competitive work, local SEO, link prospecting and report writing. Preserve their decision-making intent without requiring MCP or OpenSEO's in-app chat.
 - Review dashboard-style summary and opportunity logic; expose useful computed results as CLI operations rather than rebuilding a dashboard.
 - Exercise every inventory row end to end from Pi and at least one other shell-capable agent, including mutations, exports and re-reading historical data. Publish a documented gap only for externally unavailable capabilities, then decide whether the release can honestly claim parity.
-- Prepare a public install path, license compatible with reused OpenSEO code, contributor guidance and security reporting guidance before publication. Verify a clean-machine install, not only a source checkout.
+- Before a functional release, publish an install path, contributor and security reporting guidance. Keep OpenSEO's original license notices with ported code. Verify a clean-machine install, not only a source checkout.
 - Exit: no required SEO row remains `not started`, `in progress` or silently skipped. The normal workflow starts with a local command, not a running OpenSEO server; a contributor can build and test it from the public repository.
 
 ## Dependencies and non-goals
