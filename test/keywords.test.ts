@@ -3,50 +3,91 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { keywordMetrics } from "../src/dataforseo.js";
 import { OperationError } from "../src/errors.js";
+import { keywordMetrics } from "../src/keywords.js";
 import { runCli } from "./helpers.js";
 
 const fixture = JSON.parse(await readFile(new URL("./keyword-overview.json", import.meta.url), "utf8")) as Record<string, unknown>;
 const project = { domain: "example.com", locationCode: 2840, languageCode: "en" };
+const labsUrl = "https://api.dataforseo.com/v3/dataforseo_labs/google/keyword_overview/live";
+const adsUrl = "https://api.dataforseo.com/v3/keywords_data/google_ads/search_volume/live";
 
-function fakeFetch(body: unknown): typeof fetch {
-  return async (_url, init) => {
-    assert.ok(init, "fetch was called without request options");
-    assert.equal(init.method, "POST");
-    assert.equal(new Headers(init.headers).get("Authorization"), "Basic TEST_KEY");
-    assert.deepEqual(JSON.parse(String(init.body)), [{ keywords: ["seo audit", "seo tool"], location_code: 2840, language_code: "en", include_clickstream_data: false }]);
-    return Response.json(body);
+type Handler = (url: string, init: RequestInit) => Response | Promise<Response>;
+
+/** Swaps global fetch (the ported client calls it directly) and records each request. */
+async function withFetch<T>(handler: Handler, run: () => Promise<T>, apiKey = "TEST_KEY") {
+  const requests: Array<{ url: string; body: unknown; authorization: string | null }> = [];
+  const original = globalThis.fetch;
+  const originalKey = process.env.DATAFORSEO_API_KEY;
+  process.env.DATAFORSEO_API_KEY = apiKey;
+  globalThis.fetch = async (input, init = {}) => {
+    const url = String(input);
+    requests.push({ url, body: JSON.parse(String(init.body)), authorization: new Headers(init.headers).get("Authorization") });
+    return handler(url, init);
   };
+  try {
+    return { result: await run(), requests };
+  } finally {
+    globalThis.fetch = original;
+    process.env.DATAFORSEO_API_KEY = originalKey;
+  }
 }
 
-test("maps live keyword metrics without inventing missing values", async () => {
-  const result = await keywordMetrics(project, ["seo audit", "seo tool"], "TEST_KEY", fakeFetch(fixture));
+const taskResponse = (task: Record<string, unknown>) => Response.json({ status_code: 20000, tasks: [{ path: ["v3", "x"], ...task }] });
+
+async function failure(handler: Handler, apiKey?: string) {
+  const { result } = await withFetch(handler, () => keywordMetrics(project, ["seo audit"], { includeClickstreamData: false }).then(
+    () => assert.fail("expected a failure"),
+    (error: unknown) => (assert.ok(error instanceof OperationError, String(error)), error),
+  ), apiKey);
+  return result;
+}
+
+test("maps Labs metrics without inventing missing values and records the raw call", async () => {
+  const { result, requests } = await withFetch(() => Response.json(fixture), () => keywordMetrics(project, ["seo audit", "seo tool"], { includeClickstreamData: false }));
+  assert.deepEqual(requests, [{ url: labsUrl, authorization: "Basic TEST_KEY", body: [{ keywords: ["seo audit", "seo tool"], location_code: 2840, language_code: "en", include_clickstream_data: false }] }]);
+  assert.equal(result.source, "labs");
   assert.deepEqual(result.rows, [
-    { keyword: "seo audit", searchVolume: 1200, difficulty: 35, cpc: 2.5, intent: "commercial" },
-    { keyword: "seo tool", searchVolume: null, difficulty: null, cpc: null, intent: null },
+    { keyword: "seo audit", searchVolume: 1200, cpc: 2.5, competition: 0.42, competitionLevel: "MEDIUM", keywordDifficulty: 35, intent: "commercial", monthlySearches: [{ year: 2026, month: 8, searchVolume: 1300 }, { year: 2026, month: 7, searchVolume: null }] },
+    { keyword: "seo tool", searchVolume: null, cpc: null, competition: null, competitionLevel: null, keywordDifficulty: null, intent: null, monthlySearches: [] },
   ]);
   assert.equal(result.costUsd, 0.01);
+  assert.equal(result.calls[0].items.length, 2, "raw items are kept for evidence");
 });
 
-test("reports charged task failures and invalid provider payloads", async () => {
-  const failed = structuredClone(fixture);
-  const task = (failed.tasks as Array<Record<string, unknown>>)[0];
-  task.status_code = 40101;
-  task.status_message = "Internal SE Server Error";
-  await assert.rejects(keywordMetrics(project, ["seo audit", "seo tool"], "TEST_KEY", fakeFetch(failed)), /charged \$0\.01/);
-  await assert.rejects(keywordMetrics(project, ["seo audit", "seo tool"], "TEST_KEY", fakeFetch({ status_code: 20000, tasks: [{ status_code: 20000, cost: 0.01, path: [], result: [{ items: "invalid" }] }] })), /Unexpected DataForSEO/);
+test("routes Google-Ads-only markets to search volume, as OpenSEO does", async () => {
+  const andorra = { ...project, locationCode: 2020, languageCode: "ca" };
+  const ads = { status_code: 20000, tasks: [{ status_code: 20000, cost: 0.075, path: ["v3", "keywords_data"], result: [{ keyword: "seo audit", search_volume: 20, cpc: 1.1, competition: "LOW", competition_index: 12, monthly_searches: null }] }] };
+  const { result, requests } = await withFetch(() => Response.json(ads), () => keywordMetrics(andorra, ["seo audit"], { includeClickstreamData: false }));
+  assert.equal(requests[0].url, adsUrl);
+  assert.equal(result.source, "google_ads");
+  assert.deepEqual(result.rows[0], { keyword: "seo audit", searchVolume: 20, cpc: 1.1, competition: 0.12, competitionLevel: "LOW", keywordDifficulty: null, intent: null, monthlySearches: [] });
+  await assert.rejects(keywordMetrics(andorra, ["seo audit"], { includeClickstreamData: true }), /only to markets served by DataForSEO Labs/);
 });
 
-test("classifies provider transport, auth and payload failures", async () => {
-  const kind = (fetcher: typeof fetch) => keywordMetrics(project, ["seo audit"], "TEST_KEY", fetcher).then(
-    () => assert.fail("expected a provider failure"),
-    (error: unknown) => (assert.ok(error instanceof OperationError, String(error)), error.kind),
-  );
-  assert.equal(await kind(async () => { throw new TypeError("fetch failed"); }), "provider");
-  assert.equal(await kind(async () => new Response("", { status: 401 })), "credentials");
-  assert.equal(await kind(async () => new Response("", { status: 403 })), "provider");
-  assert.equal(await kind(async () => new Response("<html>", { status: 200 })), "provider");
+test("retries a transient 5xx and then succeeds", async () => {
+  let attempts = 0;
+  const { result } = await withFetch(() => (++attempts < 3 ? new Response("busy", { status: 503 }) : Response.json(fixture)), () => keywordMetrics(project, ["seo audit"], { includeClickstreamData: false }));
+  assert.equal(attempts, 3);
+  assert.equal(result.rows.length, 2);
+});
+
+test("classifies credential, transport, task and payload failures", async () => {
+  const cases: Array<[string, Handler, OperationError["kind"], RegExp, string?]> = [
+    ["missing key", () => Response.json(fixture), "credentials", /DATAFORSEO_API_KEY is required/, ""],
+    ["HTTP 401", () => new Response("", { status: 401 }), "credentials", /HTTP 401/],
+    ["HTTP 403", () => new Response("", { status: 403 }), "provider", /HTTP 403/],
+    ["network", () => { throw new TypeError("fetch failed"); }, "provider", /request failed .*fetch failed/],
+    ["not JSON", () => new Response("<html>", { status: 200 }), "provider", /not JSON/],
+    ["charged task failure", () => taskResponse({ status_code: 40101, status_message: "Internal SE Server Error.", cost: 0.01 }), "provider", /Internal SE Server Error\. \(charged \$0\.01\)/],
+    ["invalid market", () => taskResponse({ status_code: 40501, status_message: "Invalid Field: 'location_code'.", cost: 0, data: { location_code: 1 } }), "input", /location_code=1\) \(charged \$0\)/],
+    ["invalid item shape", () => taskResponse({ status_code: 20000, cost: 0.01, result: [{ items: [{ keyword: 7 }] }] }), "provider", /invalid response shape: 0\.keyword/],
+  ];
+  for (const [name, handler, kind, message, apiKey] of cases) {
+    const error = await failure(handler, apiKey);
+    assert.equal(error.kind, kind, name);
+    assert.match(error.message, message, name);
+  }
 });
 
 test("CLI discovers a project, saves full evidence, and maps failures to exit codes", async () => {
@@ -75,8 +116,9 @@ test("CLI discovers a project, saves full evidence, and maps failures to exit co
     assert.equal(output.project.domain, "example.com");
     assert.equal(output.rows.length, 2);
     assert.deepEqual(output.missingKeywords, ["missing term"]);
-    const saved = JSON.parse(await readFile(output.evidence, "utf8")) as { raw: unknown; rows: unknown[] };
-    assert.deepEqual(saved.raw, fixture);
+    const saved = JSON.parse(await readFile(output.evidence, "utf8")) as { calls: Array<{ path: string[]; costUsd: number; items: unknown }>; rows: unknown[] };
+    const task = (fixture.tasks as Array<{ path: string[]; result: Array<{ items: unknown }> }>)[0];
+    assert.deepEqual(saved.calls, [{ path: task.path, costUsd: 0.01, items: task.result[0].items }]);
     assert.equal(saved.rows.length, 2);
   } finally {
     await rm(root, { recursive: true, force: true });
