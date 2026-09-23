@@ -8,9 +8,9 @@ Full SEO capability parity with OpenSEO is the target. The initial baseline is O
 
 - Pin the upstream commit and enumerate the MCP tool list and SEO-oriented application-only endpoints, including AI Visibility, Lighthouse exports, GA4, saved data, reports and summaries.
 - Record representative request/response fixtures for paid provider calls without committing credentials or sensitive project data. Check OpenSEO's MIT attribution requirements before copying code.
-- Spike a Node-only DataForSEO call with validated output and project-local save. Spike the intended history store under interrupted and overlapping writes; decide DuckDB vs SQLite on evidence.
-- Sketch a complete agent task using one skill and one real local query. Try it in Pi and Codex before expanding the command surface; note discovery failures, unnecessary calls and oversized outputs.
-- Exit: an approved inventory with no known capability omitted; demonstrated portable boundary, chosen storage and identified nonportable dependencies, and evidence about the first agent workflow.
+- Validate a Node-only DataForSEO call with project-local evidence. US/en keyword overview calls succeeded; one earlier HTTP 403 was not diagnosed. Close it before Phase 1 credential handling: reproduce it or confirm it is not reproducible, and record the request characteristics (account, endpoint, header/auth shape). SQLite is selected for mutable history after a disposable cross-process spike (see [DESIGN.md](DESIGN.md)); confirm Node write behavior and representative data volume when building Phase 1 storage.
+- Run a complete agent task using one skill and a real local query in both Pi and Codex before expanding the command surface. The current Pi/Codex exercise used fixtures, while the later live query was run from the CLI alone; the combined test remains open.
+- Exit: maintainer-reviewed inventory with no known capability omitted; demonstrated portable boundary, chosen storage and identified nonportable dependencies, and evidence about a live agent workflow. Inventory and storage direction are recorded; the live agent exercise, the coverage review and the undiagnosed DataForSEO HTTP 403 remain open.
 
 ## Phase 1 — Local contract and durable project state
 
