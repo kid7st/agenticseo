@@ -33,7 +33,11 @@ Every result states `source`, date, market and `costUsd`, and points to an `evid
 - `agenticseo ranked TARGET [--scope ...] [--max-rank N] [--min-volume N] [--exclude BRAND,...]`: the keywords a domain or page already ranks for, when a target site or competitor is part of the brief. Use it for near-miss terms (for example `--max-rank 20` on the user's own site) and competitor-owned terms.
 - `agenticseo competitors KEYWORD...`: which domains compete across the candidate terms' SERPs.
 
-Not available yet in AgenticSEO: Search Console data, local SEO lookups and saved keyword lists. Say so when the task needs them; do not approximate them.
+- `agenticseo saved list [--tags TAG,...]`: keywords the project already saved, with their latest metrics and tags. Check it first to avoid redoing work, and use existing tags as context.
+- `agenticseo saved add KEYWORD... --tags TAG,...`: save chosen keywords only after the user explicitly confirms. Suggest short tags such as `topic:<topic>`, `intent:<intent>` or `page:<slug>`, and confirm new tag names. Researched keywords keep their metrics; `agenticseo saved refresh` re-fetches all saved keywords and is billed, so ask first.
+- `agenticseo query "SELECT ..."`: read-only SQL over saved keywords and stored metrics when a question needs a join or aggregate, for example the highest-volume saved keywords per tag. Select only the columns and rows you need.
+
+Not available yet in AgenticSEO: Search Console data and local SEO lookups. Say so when the task needs them; do not approximate them.
 
 ## Workflow
 
@@ -44,6 +48,7 @@ Not available yet in AgenticSEO: Search Console data, local SEO lookups and save
 5. Prioritize by practical opportunity, not volume alone: fit with the product, page or topic; clear intent; reasonable difficulty; useful volume or CPC; a SERP the site can plausibly compete in.
 6. Run `agenticseo serp` for high-potential or ambiguous keywords when the SERP would change the recommendation.
 7. Present a shortlist and a longer opportunity table.
+8. Ask before saving keywords. When the user agrees, save them with tags and say which tags you used.
 
 ## Output
 

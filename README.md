@@ -2,7 +2,7 @@
 
 Open-source, local-first SEO for agents. AgenticSEO aims to bring OpenSEO's SEO capabilities to a portable core, local commands, and agent skills, without requiring an OpenSEO account, MCP server, browser UI, or always-on application server. Pi is the first development client, not the only intended user.
 
-**Status:** early prototype. Project setup, project context, local reports, keyword metrics, keyword research, live SERPs and domain research are implemented; the full [OpenSEO capability inventory](docs/PRODUCT.md) remains the goal.
+**Status:** early prototype. Project setup, project context, local reports, keyword metrics, keyword research, live SERPs, domain research and saved keywords are implemented; the full [OpenSEO capability inventory](docs/PRODUCT.md) remains the goal.
 
 - [Product and capability inventory](docs/PRODUCT.md)
 - [Technical design](docs/DESIGN.md)
@@ -39,9 +39,12 @@ agenticseo reports
 - `pages TARGET` lists a domain's pages by organic traffic or ranking-keyword count (OpenSEO's domain pages view, cached 12 hours), with `--scope`, `--include`/`--exclude` URL terms, traffic and keyword-count ranges, `--sort`, `--order` and `--page`/`--page-size`.
 - `competitors KEYWORD...` compares the domains ranking across up to 100 keywords' SERPs (OpenSEO's `find_serp_competitors`), sorted by visibility; `--exclude-domains` drops your own site and its subdomains.
 
+- `saved add KEYWORD... [--tags TAG,...] [--replace-tags]` saves keywords for the project's market (OpenSEO's `save_keywords`: idempotent, tags appended unless replaced). `saved list` shows them with their latest metrics and tags, using OpenSEO's filters (`--search`, `--include`/`--exclude`, `--tags` matching any tag, volume/CPC/difficulty ranges), `--sort`/`--order` and `--page`. `saved tag`, `saved rename-tag` and `saved delete-tag` (refused while a tag is in use) manage tags by name; `saved remove` deletes by id. `saved export [--format csv|jsonl]` writes OpenSEO's CSV columns or full JSON lines to `.agenticseo/exports/`. `saved refresh` re-fetches metrics for every saved keyword, one paid call per market. Keywords found by `research` keep their metrics automatically.
+- `query "SELECT ..."` runs one read-only SQL statement against the project database and returns up to 500 rows. Tables: `saved_keywords`, `saved_keyword_tags`, `saved_keyword_tag_assignments` and `keyword_metrics` (latest metrics per keyword and market); `SELECT sql FROM sqlite_schema` shows their columns.
+
 Domain commands need a market DataForSEO Labs serves. Where OpenSEO would quietly switch such a project to the United States, AgenticSEO exits 2 so you choose the market with `--location`.
 
-`keywords`, `research` and `serp` take `--location` and `--language` to run one call in another market; as in OpenSEO, changing only the location switches to that country's language. Paid commands report `source` (which DataForSEO API answered), date, the resolved `market` and `costUsd`, and save an evidence file under `.agenticseo/evidence/` with all rows, monthly trends and the raw provider items of each call. Evidence and cache are ignored by Git; context and reports are meant to be versioned with the site. Missing metrics stay `null`, never 0. Google Ads markets have no keyword difficulty or intent. `--clickstream` asks Labs for clickstream-refined volume at twice the cost and is refused for Google Ads markets. If the key is missing, a paid command fails without a lookup.
+`keywords`, `research` and `serp` take `--location` and `--language` to run one call in another market; as in OpenSEO, changing only the location switches to that country's language. Paid commands report `source` (which DataForSEO API answered), date, the resolved `market` and `costUsd`, and save an evidence file under `.agenticseo/evidence/` with all rows, monthly trends and the raw provider items of each call. Evidence, cache and the project database (`.agenticseo/data/`) are ignored by Git; context, reports and exports are meant to be versioned with the site when you choose. Missing metrics stay `null`, never 0. Google Ads markets have no keyword difficulty or intent. `--clickstream` asks Labs for clickstream-refined volume at twice the cost and is refused for Google Ads markets. If the key is missing, a paid command fails without a lookup.
 
 Every command prints one JSON document on stdout when it succeeds. Failures print a message on stderr and exit with a code an agent can branch on:
 

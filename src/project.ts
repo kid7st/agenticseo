@@ -178,7 +178,7 @@ export async function readContext(root: string) {
 }
 
 /** A directory of generated data under .agenticseo that Git ignores by default. */
-async function ensureIgnoredDirectory(root: string, name: "evidence" | "cache") {
+async function ensureIgnoredDirectory(root: string, name: "evidence" | "cache" | "data") {
   const directory = join(stateDirectory(root), name);
   await mkdir(directory, { recursive: true });
   try {
@@ -187,6 +187,11 @@ async function ensureIgnoredDirectory(root: string, name: "evidence" | "cache") 
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
   }
   return directory;
+}
+
+/** Where the project database lives (saved keywords, metrics and later history). */
+export function dataDirectory(root: string) {
+  return ensureIgnoredDirectory(root, "data");
 }
 
 /** Where provider responses are cached, as OpenSEO caches them in R2. */
