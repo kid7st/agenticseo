@@ -1,0 +1,19 @@
+{
+  "name": "agenticseo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "bin": { "agenticseo": "./dist/src/cli.js" },
+  "scripts": {
+    "build": "tsc",
+    "test": "node --import tsx --test test/*.test.ts",
+    "check": "npm run build && npm test"
+  },
+  "dependencies": { "zod": "^4.1.12" },
+  "devDependencies": {
+    "@types/node": "^22.18.13",
+    "tsx": "^4.22.4",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "status_code": 20000,
+  "tasks": [{
+    "status_code": 20000,
+    "cost": 0.01,
+    "path": ["v3", "dataforseo_labs", "google", "keyword_overview", "live"],
+    "result": [{ "items": [
+      { "keyword": "seo audit", "keyword_info": { "search_volume": 1200, "cpc": 2.5 }, "keyword_properties": { "keyword_difficulty": 35 }, "search_intent_info": { "main_intent": "commercial" } },
+      { "keyword": "seo tool", "keyword_info": { "search_volume": null, "cpc": null }, "keyword_properties": { "keyword_difficulty": null }, "search_intent_info": { "main_intent": null } }
+    ] }]
+  }]
+}

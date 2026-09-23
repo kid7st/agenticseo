@@ -2,7 +2,7 @@
 
 ## Working rule
 
-Full SEO capability parity with OpenSEO is the target. Finish each phase with runnable local commands, a project-local artifact, and a comparison against pinned upstream behavior. Do not claim parity because a command name exists. Keep a tracked matrix of every product capability in [PRODUCT.md](PRODUCT.md): `not started / in progress / verified / blocked`, with an upstream reference, fixture, local command and observed differences. Add that matrix when implementation begins and pin the upstream commit; do not guess version-specific parity now.
+Full SEO capability parity with OpenSEO is the target. The initial baseline is OpenSEO commit `0ffff93101043aad7600a3b6a499a0cd2887ef49`; expand the inventory against that snapshot rather than assuming MCP tools cover the product. Finish each phase with runnable local commands, a project-local artifact, and a comparison against pinned upstream behavior. Do not claim parity because a command name exists. Keep a tracked matrix of every product capability in [PRODUCT.md](PRODUCT.md): `not started / in progress / verified / blocked`, with an upstream reference, fixture, local command and observed differences.
 
 ## Phase 0 — Baseline and risk spikes
 
