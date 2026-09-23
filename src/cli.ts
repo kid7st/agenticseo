@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { keywordMetrics } from "./dataforseo.js";
 import { OperationError } from "./errors.js";
 import { findProjectRoot, initProject, readContext, readProject, saveEvidence } from "./project.js";
-import { listReports } from "./reports.js";
+import { listReports, listTemplates } from "./reports.js";
 
 const usage = `Usage:
   agenticseo init --domain example.com --location 2840 --language en [--project DIR]
@@ -40,7 +40,8 @@ async function run([command, ...args]: string[]): Promise<unknown> {
 
   if (command === "context") {
     rejectUnknown(args);
-    return readContext(await findProjectRoot(projectOption));
+    const root = await findProjectRoot(projectOption);
+    return { ...(await readContext(root)), reportTemplates: await listTemplates(root) };
   }
 
   if (command === "reports") {

@@ -3,14 +3,21 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24" },
-  "bin": { "agenticseo": "./dist/src/cli.js" },
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "agenticseo": "./dist/src/cli.js"
+  },
   "scripts": {
     "build": "tsc",
     "test": "node --import tsx --test test/*.test.ts",
     "check": "npm run build && npm test"
   },
-  "dependencies": { "zod": "^4.1.12" },
+  "dependencies": {
+    "tldts": "^7.4.14",
+    "zod": "^4.1.12"
+  },
   "devDependencies": {
     "@types/node": "^24.10.3",
     "tsx": "^4.22.4",

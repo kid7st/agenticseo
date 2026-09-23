@@ -3,6 +3,21 @@ import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { z } from "zod";
 import { OperationError } from "./errors.js";
+import {
+  competitorInputSchema,
+  customSectionSlugSchema,
+  keyPageInputSchema,
+  MAX_COMPETITORS,
+  MAX_CUSTOM_SECTIONS,
+  MAX_KEY_PAGES,
+  normalizeKeyPageUrl,
+  PROJECT_CONTEXT_SECTION_KEYS,
+  PROSE_MAX_CHARS,
+  RESEARCH_LOG_LIMIT,
+  RESEARCH_LOG_RETENTION_DAYS,
+  researchLogSummarySchema,
+} from "./openseo/projectContext.js";
+import { parseResearchTarget } from "./openseo/researchScope.js";
 
 const projectSchema = z.strictObject({
   domain: z.string().min(1),
@@ -12,31 +27,44 @@ const projectSchema = z.strictObject({
 
 export type Project = z.infer<typeof projectSchema>;
 
-// Mirrors OpenSEO's project context: four prose sections, custom sections and
-// curated competitor/key-page shortlists, with the same length and size caps.
-const prose = z.string().max(4000).default("");
-const slug = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Use a lowercase slug like 'launch-plan'").max(60);
+// OpenSEO's project context as a hand-editable file. Names, caps and
+// normalization come from the ported upstream vocabulary; see src/openseo/.
+const prose = z.string().trim().max(PROSE_MAX_CHARS).default("");
+
+const competitorDomain = z.string().transform((value, issues) => {
+  // Same canonicalization as the project's own domain, so a URL, www or caps is one competitor.
+  const parsed = parseResearchTarget(value, "domain");
+  if (parsed.ok) return parsed.target.hostname;
+  issues.addIssue({ code: "custom", message: parsed.message });
+  return z.NEVER;
+});
+
+const keyPageUrl = z.string().transform((value, issues) => {
+  const url = normalizeKeyPageUrl(value);
+  if (url) return url;
+  issues.addIssue({ code: "custom", message: `Not a valid page URL: ${value}` });
+  return z.NEVER;
+});
 
 const contextSchema = z.strictObject({
-  businessOverview: prose,
-  currentGoal: prose,
-  positioning: prose,
-  writingPreferences: prose,
-  customSections: z.record(slug, z.strictObject({ title: z.string().trim().min(1).max(120), content: prose })).default({}),
-  competitors: z.array(z.strictObject({
-    domain: z.string().trim().min(1).max(255),
-    name: z.string().trim().max(120).optional(),
-    notes: z.string().trim().max(500).optional(),
-  })).max(100).default([]),
-  keyPages: z.array(z.strictObject({
-    url: z.url({ protocol: /^https?$/ }).max(2048),
-    role: z.enum(["hub", "spoke", "money", "other"]).optional(),
-    topic: z.string().trim().max(200).optional(),
-    notes: z.string().trim().max(500).optional(),
-  })).max(100).default([]),
+  sections: z.strictObject({
+    business_overview: prose,
+    current_goal: prose,
+    positioning: prose,
+    writing_preferences: prose,
+  }).prefault({}),
+  customSections: z.record(customSectionSlugSchema, z.strictObject({
+    title: z.string().trim().min(1).max(120).optional(),
+    content: prose,
+  })).refine((sections) => Object.keys(sections).length <= MAX_CUSTOM_SECTIONS, `A project can hold ${MAX_CUSTOM_SECTIONS} custom sections`).prefault({}),
+  competitors: z.array(competitorInputSchema.extend({ domain: competitorInputSchema.shape.domain.pipe(competitorDomain) }).strict())
+    .max(MAX_COMPETITORS).default([]),
+  keyPages: z.array(keyPageInputSchema.extend({ url: keyPageInputSchema.shape.url.pipe(keyPageUrl) }).strict())
+    .max(MAX_KEY_PAGES, "This is a shortlist, not a page inventory").default([]),
+  researchLog: z.array(z.strictObject({ entryDate: z.iso.date(), summary: researchLogSummarySchema })).default([]),
 }).superRefine((context, issues) => {
-  // Upstream upserts by domain/url; a hand-edited file must not hold two entries for one.
-  const domain = firstDuplicate(context.competitors.map((entry) => entry.domain.toLowerCase()));
+  // Upstream upserts by normalized domain/url; a hand-edited file must not hold two entries for one.
+  const domain = firstDuplicate(context.competitors.map((entry) => entry.domain));
   if (domain) issues.addIssue({ code: "custom", path: ["competitors"], message: `Duplicate competitor domain ${domain}` });
   const url = firstDuplicate(context.keyPages.map((entry) => entry.url));
   if (url) issues.addIssue({ code: "custom", path: ["keyPages"], message: `Duplicate key page ${url}` });
@@ -45,8 +73,6 @@ const contextSchema = z.strictObject({
 function firstDuplicate(values: string[]) {
   return values.find((value, index) => values.indexOf(value) !== index);
 }
-
-const sectionFields = ["businessOverview", "currentGoal", "positioning", "writingPreferences"] as const;
 
 export const stateDirectory = (root: string) => join(root, ".agenticseo");
 const projectFile = (root: string) => join(stateDirectory(root), "project.json");
@@ -98,11 +124,10 @@ export async function readProject(root: string): Promise<Project> {
 }
 
 export async function initProject(root: string, input: { domain?: string; locationCode: number; languageCode?: string }) {
-  const url = input.domain ? URL.parse(input.domain.includes("://") ? input.domain : `https://${input.domain}`) : null;
-  if (!url || !["http:", "https:"].includes(url.protocol) || url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
-    throw new OperationError("input", "--domain must be a hostname, not a URL path or credential");
-  }
-  const project = validate(projectSchema, { ...input, domain: url.hostname }, "Project settings");
+  // OpenSEO canonicalizes a project domain to the bare host (www, scheme and path stripped).
+  const target = parseResearchTarget(input.domain ?? "", "domain");
+  if (!target.ok) throw new OperationError("input", `--domain: ${target.message}`);
+  const project = validate(projectSchema, { ...input, domain: target.target.hostname }, "Project settings");
   await ensureEvidenceDirectory(root);
   try {
     await writeFile(projectFile(root), `${JSON.stringify(project, null, 2)}\n`, { flag: "wx" });
@@ -115,13 +140,22 @@ export async function initProject(root: string, input: { domain?: string; locati
   return { project: root, ...project };
 }
 
-/** A missing context file is an empty context: every section is simply not written yet. */
+/**
+ * A missing context file is an empty context: every section is simply not written yet.
+ * The research log shows OpenSEO's window: the newest entries from the last 90 days.
+ */
 export async function readContext(root: string) {
   const context = (await readState(contextFile(root), contextSchema)) ?? contextSchema.parse({});
+  const since = new Date(Date.now() - RESEARCH_LOG_RETENTION_DAYS * 86_400_000).toISOString().slice(0, 10);
+  const researchLog = context.researchLog
+    .filter((entry) => entry.entryDate >= since)
+    .sort((a, b) => b.entryDate.localeCompare(a.entryDate))
+    .slice(0, RESEARCH_LOG_LIMIT);
   return {
     file: contextFile(root),
-    context,
-    missingSections: sectionFields.filter((field) => context[field].trim() === ""),
+    context: { ...context, researchLog },
+    researchLogOmitted: context.researchLog.length - researchLog.length,
+    missingSections: PROJECT_CONTEXT_SECTION_KEYS.filter((key) => context.sections[key] === ""),
   };
 }
 
