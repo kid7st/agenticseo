@@ -19,5 +19,5 @@ Interview the user once about one website and store the durable answers in the p
    - `customSections`: `{ "slug": { "title"?, "content" } }` for anything that does not fit above, at most 20.
    Each prose section holds up to 4,000 characters: a few tight paragraphs, not a transcript. An empty string means the section is missing. Record only facts the user confirmed.
 4. Run `agenticseo context` again after each write. Exit code 2 names the invalid field; fix the file and rerun until it succeeds. The output shows competitor domains and page URLs in canonical form; two entries that normalize to the same domain or URL are rejected.
-5. If this session spent money on a provider, append `{ "entryDate": "YYYY-MM-DD", "summary": "<what>: <inputs>. Verdict: <conclusion>" }` to `researchLog` with today's date.
+5. If this session spent money on a provider, append `{ "entryDate": "<today from agenticseo context>", "summary": "<what>: <inputs>. Verdict: <conclusion>" }` to `researchLog`. Copy `today` from the command output; do not guess the date.
 6. Reply with a short summary of what was recorded and what is still missing, and suggest one next task, such as a keyword snapshot for a key page.

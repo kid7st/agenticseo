@@ -33,6 +33,7 @@ test("init canonicalizes the domain like OpenSEO and rejects bad input with the 
 
 type ContextOutput = {
   file: string;
+  today: string;
   context: {
     competitors: Array<{ domain: string }>;
     keyPages: Array<{ url: string }>;
@@ -43,13 +44,18 @@ type ContextOutput = {
   reportTemplates: Array<{ name: string; description: string }>;
 };
 
-const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+function daysAgo(days: number) {
+  const date = new Date(Date.now() - days * 86_400_000);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
 
 test("context normalizes entries, windows the research log and lists report templates", async () => {
   await withProject(async (root) => {
     const empty = runCli(root, ["context"]);
     assert.equal(empty.status, 0, empty.stderr);
-    assert.deepEqual((JSON.parse(empty.stdout) as ContextOutput).missingSections, ["business_overview", "current_goal", "positioning", "writing_preferences"]);
+    const emptyOutput = JSON.parse(empty.stdout) as ContextOutput;
+    assert.deepEqual(emptyOutput.missingSections, ["business_overview", "current_goal", "positioning", "writing_preferences"]);
+    assert.equal(emptyOutput.today, daysAgo(0), "today is the local calendar date");
 
     const file = join(root, ".agenticseo", "context.json");
     await mkdir(join(root, ".agenticseo", "templates"));
@@ -96,6 +102,7 @@ test("context rejects invalid hand edits with the input exit code", async () => 
       JSON.stringify({ keyPages: [{ url: "https://example.com/", role: "landing" }] }),
       JSON.stringify({ customSections }),
       JSON.stringify({ researchLog: [{ entryDate: "yesterday", summary: "x" }] }),
+      JSON.stringify({ researchLog: [{ entryDate: daysAgo(-1), summary: "A guessed date after today." }] }),
     ]) {
       await writeFile(file, invalid);
       const result = runCli(root, ["context"]);

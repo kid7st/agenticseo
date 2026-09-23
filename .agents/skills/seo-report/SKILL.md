@@ -14,7 +14,7 @@ A report is a Markdown file in the project. The CLI only indexes and validates r
    - Then `##` sections with the evidence: market, lookup dates, sources, and paths to evidence files. Keep unknown values unknown.
 3. Only when the user wants a shareable or printable document, also write `<short-slug>.html` next to it: one complete, self-contained HTML document ending in `</html>`, with CSS inline and no external scripts, fonts or images, under 500 KB. It is an export of the same report, so keep the title and verdict identical.
 4. Run `agenticseo reports` again. Exit code 2 names the file and the problem; fix it and rerun.
-5. The skill that produced the finding appends its own research-log line. Add one only if it did not: `{ "entryDate": "<today>", "summary": "Report: <title>. Verdict: <conclusion>" }` in `researchLog` of the context file.
+5. The skill that produced the finding appends its own research-log line. Add one only if it did not: `{ "entryDate": "<today from agenticseo context>", "summary": "Report: <title>. Verdict: <conclusion>" }` in `researchLog` of the context file.
 6. Reply with the report path, a one-line verdict and the single top action. Do not paste the report into the chat.
 
 To remove a report, delete its `.md` file and any `.html` export with the same name. Templates are Markdown files in `.agenticseo/templates/` with the same shape: a `# Title` (the template name) and a short description of what the report must contain.
