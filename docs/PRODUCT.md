@@ -2,16 +2,16 @@
 
 ## Goal
 
-Deliver OpenSEO's SEO capabilities as local commands callable by an agent, with project-owned data and no mandatory OpenSEO server. Full capability parity is the destination; phases in the plan are delivery order, not a reduced product goal.
+Build an open-source, agent-first SEO product that delivers OpenSEO's SEO capabilities through a portable core and local-first commands, with project-owned data and no mandatory OpenSEO server. Full SEO capability parity is the destination; phases in the plan are delivery order, not a reduced product goal. The product must be useful to agents beyond Pi and maintainable by contributors outside its founding team.
 
 An agent should be able to inspect a project's context, buy only the data needed, execute research or audits, save the evidence, and use it to recommend or implement SEO improvements. Every capability must be usable without a browser UI. Programmatic output must remain usable without interpreting a report or scraping terminal text.
 
 ## Users and boundaries
 
-- Primary user: one person working on one or more websites with a local coding agent such as Pi.
+- Primary users: developers, SEO practitioners and teams using agents to research and improve websites. Pi is the first supported development path; any agent able to run commands should be able to use the product. Local-first does not mean single-user-only.
 - The CLI runs on demand. It may call external APIs. Scheduled or remote work can invoke the same operations without introducing a required web service.
-- Project context, saved results, and reports live in the user's project directory. API credentials live outside the project or in environment variables, never in project files.
-- No hosted-account signup, workspace membership, team permissions, subscriptions, credit resale, referrals, or Web UI. Provider usage fees and quotas still apply.
+- Project context, saved results, and reports live in a project-owned directory with portable, documented formats. API credentials live outside the project or in environment variables, never in project files. Projects can be shared using ordinary version control for selected files; concurrent editing of one local history database is not promised.
+- No hosted-account signup, workspace membership, team permissions, subscriptions, credit resale, referrals, or required Web UI. Provider usage fees and quotas still apply. Optional integrations must not turn into a mandatory hosted account.
 - OpenSEO's in-app SAM chat interface is not reproduced. Its underlying SEO workflows must be available to the user's existing agent through local commands and skills; chat UI/session parity is outside scope.
 
 ## Capability inventory
@@ -39,4 +39,4 @@ Data access is not the same as agent workflow parity. Preserve or adapt OpenSEO'
 
 For each inventory row, demonstrate a local invocation that produces the comparable OpenSEO result for a representative fixture or authorized live project, preserves important distinctions (target scope, market, dates, source and missing data), and leaves inspectable project-local evidence. For a mutation, verify that a second invocation can read the changed state. For a paid operation, show expected cost or an explicit spending limit before executing it.
 
-The final parity review must also inspect OpenSEO's application-only SEO endpoints, not just its MCP registration list. Document upstream-only behavior that cannot be reproduced because of provider access, licensing, or platform limitations rather than silently calling it complete.
+The final parity review must also inspect OpenSEO's application-only SEO endpoints, not just its MCP registration list. Document upstream-only behavior that cannot be reproduced because of provider access, licensing, or platform limitations rather than silently calling it complete. A public release also needs a documented install path, reproducible checks, a clear license and usable agent guidance for at least one non-Pi client.

@@ -5,7 +5,7 @@
 Use the **same SEO logic for local and optional remote execution**:
 
 ```text
-Pi / other agent -> CLI (JSON stdout, errors on stderr)
+Any shell-capable agent -> CLI (JSON stdout, errors on stderr)
                          |
                          v
           SEO operations and validated inputs
@@ -15,7 +15,7 @@ Pi / other agent -> CLI (JSON stdout, errors on stderr)
         Google, etc.)    + history DB)   default)
 ```
 
-The CLI owns argument parsing and presentation; operations own SEO rules; provider calls own remote HTTP and response validation; persistence owns local state. Keep these boundaries only where needed to remove OpenSEO's Cloudflare/Web/account dependencies. Do not port its server functions, OAuth provider, billing context, MCP transport, or Web UI as a prerequisite for the core. Preserve upstream MIT attribution for any copied code.
+The CLI owns argument parsing and presentation; operations own SEO rules; provider calls own remote HTTP and response validation; persistence owns local state. Keep these boundaries only where needed to remove OpenSEO's Cloudflare/Web/account dependencies. Do not port its server functions, OAuth provider, billing context, MCP transport, or Web UI as a prerequisite for the core. Publish a documented install path for users outside the source checkout, and keep command contracts agent-neutral. Preserve upstream MIT attribution for any copied code.
 
 Prefer TypeScript on Node so existing Zod schemas, DataForSEO shaping, issue detectors, and skill instructions can be reused where practical. Do not assume that an OpenSEO service is directly importable: current code uses `cloudflare:workers`, R2/KV, DB repositories and billing context in business paths. Extract portable logic with characterization checks; replace platform adapters instead of simulating a Worker runtime.
 
@@ -36,7 +36,7 @@ Prefer TypeScript on Node so existing Zod schemas, DataForSEO shaping, issue det
 
 ## Agent contract
 
-Start with an executable, not an MCP server or Pi-specific extension. Pi can call commands through its shell tool. The CLI provides machine-readable JSON for successful operations, documented exit codes and human-readable errors on stderr; no progress logs mixed into JSON. Commands must accept an explicit project root, support non-interactive operation and return paths to saved artifacts. Agent skills can guide when to call which command without duplicating SEO computations.
+Start with an executable, not an MCP server or Pi-specific extension. Pi can call commands through its shell tool, and other shell-capable agents should work the same way. The CLI provides machine-readable JSON for successful operations, documented exit codes and human-readable errors on stderr; no progress logs mixed into JSON. Commands must accept an explicit project root, support non-interactive operation and return paths to saved artifacts. Agent skills can guide when to call which command without duplicating SEO computations.
 
 A future MCP adapter is optional. It should wrap the same operations if another agent needs MCP, not be a required server for Pi.
 
