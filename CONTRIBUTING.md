@@ -4,7 +4,7 @@ AgenticSEO is an early prototype. The [product scope](docs/PRODUCT.md) sets the 
 
 ## Development
 
-Use Node.js 22.19 or newer. Clone the repository and run:
+Use Node.js 24 or newer (the active LTS line). Clone the repository and run:
 
 ```sh
 npm ci
