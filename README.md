@@ -7,6 +7,7 @@ Open-source, local-first SEO for agents. AgenticSEO aims to bring OpenSEO's SEO 
 - [Product and capability inventory](docs/PRODUCT.md)
 - [Technical design](docs/DESIGN.md)
 - [Execution plan and acceptance criteria](docs/PLAN.md)
+- [Contributing](CONTRIBUTING.md) · [Security reporting](SECURITY.md)
 
 ## Try the first local workflow
 
