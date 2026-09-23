@@ -16,22 +16,53 @@ A user asks their coding agent to investigate or improve a website. Skills guide
 
 ## Capability inventory
 
-This inventory covers both OpenSEO MCP and application-only SEO features. The implementation phase is recorded in [PLAN.md](PLAN.md). Validate the list against the upstream version pinned at the start of implementation; a tool list alone does not cover the whole product.
+Baseline: OpenSEO commit `0ffff93101043aad7600a3b6a499a0cd2887ef49`. Paths below are relative to that commit. This inventory was checked against its registered MCP tools **and** SEO-related application server functions/services; entries group related operations rather than treating every endpoint as a separate product capability. See [PLAN.md](PLAN.md) for delivery phases. `not started` means **no local command, fixture or parity evidence**; `in progress` means a narrower local slice exists; `verified` requires a comparable local command, fixture/live evidence and a read-back for mutations; `blocked` requires a documented external dependency. No row currently has full parity.
 
-| Capability | Required behavior | Current OpenSEO reference |
-| --- | --- | --- |
-| Projects and context | Project target, market/language, positioning, competitors, important pages, preferences, research log | `src/server/features/projects`, `src/server/features/project-context` |
-| Keywords | Discover and enrich keywords, volume/difficulty/CPC/intent/trends, inspect SERPs, save/tag/remove/export terms | `src/server/features/keywords`, `src/server/mcp/tools/research-keywords.ts` |
-| Domain and competitors | Domain overview, ranking keywords and pages, comparative SERP competitors, research scopes and markets | `src/server/features/domain`, `src/server/mcp/tools/dataforseo-research-tools.ts` |
-| Backlinks | Profiles, referring domains/pages, filters, historical signals where available, Ahrefs public domain rating enrichment | `src/server/features/backlinks`, `src/serverFunctions/ahrefs.ts` |
-| Local SEO | Business search/profile, Maps and Local Finder results, categories, reviews, posts, Q&A, local rank grid | `src/server/mcp/tools/local-seo-tools.ts`, `src/server/lib/dataforseo/business.ts` |
-| AI visibility | Brand mentions/share of voice, cited sources, prompt exploration across supported providers | `src/server/features/ai-search`, `src/serverFunctions/ai-search.ts` |
-| Site audit | Robots/sitemap-aware crawl, page and cross-page issues, audit history, optional Lighthouse sampling, issue and raw-result export | `src/server/features/audit`, `src/server/lib/audit`, `src/serverFunctions/lighthouse.ts` |
-| Rank tracking | Configurations, keyword management, manual and scheduled checks, cost estimates, runs and position history | `src/server/features/rank-tracking`, `src/server/workflows/RankCheckWorkflow.ts` |
-| Search Console | Search performance, search opportunities, URL inspection and property selection | `src/server/features/gsc`, `src/server/mcp/tools/search-console-tools.ts` |
-| Google Analytics | Organic overview, landing/page performance, acquisition, events, ecommerce, site search, audience and measurement checks | `src/server/features/ga4`, `src/server/mcp/tools/google-analytics-tools.ts` |
-| Reporting | Project reports, reusable briefs/templates, HTML output, listing, reading and deletion; agent skills for research/audits/reporting | `src/server/features/reports`, `src/server/mcp/tools/report-tools.ts`, `plugins/openseo/skills` |
-| Cross-feature summaries | Dashboard-style summary and opportunity prioritization from the above evidence, excluding onboarding/promotional widgets | `src/server/features/dashboard`, `src/server/features/ga4/services/SearchOpportunityService.ts` |
+| Capability | OpenSEO baseline source | Status | Local evidence / difference |
+| --- | --- | --- | --- |
+| Project site and market initialization | `src/serverFunctions/projects.ts`, `src/server/mcp/tools/create-project.ts` | in progress | `agenticseo init`; `test/keywords.test.ts` checks persisted config, but no edit/list/archive. |
+| Project positioning, competitors, key pages and preferences | `src/serverFunctions/projectContext.ts`, `src/server/features/project-context/services/ProjectContextService.ts` | not started | — |
+| Research log and project history | `src/server/features/project-context`, `src/server/features/projects` | not started | — |
+| Keyword overview (volume, CPC, difficulty, intent) | `src/server/lib/dataforseo/labs.ts`, `src/server/lib/dataforseo/keyword-metrics.ts` | in progress | `agenticseo keywords TERM...`; `test/keyword-overview.json` and an authorized US/en live call. Missing competition, level, monthly searches, clickstream option and Google Ads market routing. The live empty result stayed unknown and still reported its cost. |
+| Keyword discovery, suggestions and research scopes | `src/serverFunctions/keywords.ts`, `src/server/features/keywords/services/research/research.ts`, `src/serverFunctions/domain.ts` | not started | — |
+| SERP results and per-keyword analysis | `src/server/mcp/tools/get-serp-results.ts`, `src/serverFunctions/keywords.ts` | not started | — |
+| Saved keywords, refresh, tags and removal | `src/serverFunctions/keywords.ts`, `src/server/features/keywords/repositories/SavedKeywordTagsRepository.ts` | not started | — |
+| Saved keyword export | `src/serverFunctions/keywords.ts` (`exportSavedKeywords`) | not started | — |
+| Domain overview and keyword suggestions | `src/serverFunctions/domain.ts`, `src/server/features/domain/services/DomainService.ts` | not started | — |
+| Ranked keywords, pages, market/scope filters and pagination | `src/serverFunctions/domain.ts`, `src/server/mcp/tools/dataforseo-research-tools.ts` | not started | — |
+| SERP competitors and comparison | `src/server/mcp/tools/dataforseo-research-tools.ts` (`findSerpCompetitorsTool`) | not started | — |
+| Backlink overview and profile | `src/serverFunctions/backlinks.ts`, `src/server/features/backlinks/services/BacklinksService.ts` | not started | — |
+| Referring domains, backlinks, top pages, subfolders and filters | `src/serverFunctions/backlinks.ts`, `src/server/features/backlinks/services/backlinksApiFilters.ts` | not started | — |
+| Backlink history/snapshot | `src/server/features/dashboard/repositories/BacklinkSnapshotRepository.ts` | not started | — |
+| Public Ahrefs domain rating enrichment | `src/serverFunctions/ahrefs.ts` | not started | — |
+| Local business search, profiles and categories | `src/server/mcp/tools/dataforseo-research-tools.ts`, `src/server/mcp/tools/local-seo-tools.ts` | not started | — |
+| Maps / Local Finder SERPs and local rank grid | `src/server/mcp/tools/dataforseo-research-tools.ts`, `src/server/mcp/tools/local-seo-tools.ts` | not started | — |
+| Business reviews, posts/updates and Q&A | `src/server/mcp/tools/local-seo-tools.ts`, `src/server/lib/dataforseo/business.ts` | not started | — |
+| AI brand lookup, mentions and share of voice | `src/serverFunctions/ai-search.ts`, `src/server/features/ai-search/services/brandLookup.ts`, `src/server/features/ai-search/services/shareOfVoice.ts` | not started | — |
+| AI cited sources and prompt exploration | `src/server/features/ai-search/services/citedSources.ts`, `src/server/features/ai-search/services/promptExplorer.ts` | not started | — |
+| Robots/sitemap-aware discovery and safe crawl | `src/server/lib/audit/discovery.ts`, `src/server/lib/audit/url-policy.ts`, `src/server/workflows/SiteAuditWorkflow.ts` | not started | — |
+| Page issues and cross-page checks | `src/server/lib/audit/issues/page-reporters.ts`, `src/server/lib/audit/issues/multipage-checks.ts` | not started | — |
+| Audit runs, progress, partial failure, history and deletion | `src/serverFunctions/audit.ts`, `src/server/features/audit/services/AuditService.ts` | not started | — |
+| Audit issue/page retrieval and raw evidence | `src/server/mcp/tools/site-audit-tools.ts`, `src/serverFunctions/audit.ts` | not started | — |
+| Optional Lighthouse issues and export | `src/serverFunctions/lighthouse.ts`, `src/server/lib/audit/lighthouse.ts` | not started | — |
+| Rank tracker config, targets and keyword management | `src/serverFunctions/rank-tracking.ts`, `src/server/features/rank-tracking/services/RankTrackingService.ts` | not started | — |
+| Rank cost estimation, manual runs and queued provider polling | `src/serverFunctions/rank-tracking.ts`, `src/server/workflows/RankCheckWorkflow.ts` | not started | — |
+| Scheduled checks and duplicate-run prevention | `src/server/features/rank-tracking/services/scheduledRankChecks.ts`, `src/server/features/rank-tracking/services/rankCheckRunGuards.ts` | not started | — |
+| Ranking history, trends and position matrix | `src/serverFunctions/rank-tracking.ts`, `src/server/features/rank-tracking/repositories/RankTrackingRepository.ts` | not started | — |
+| Search Console connection, property selection and revocation | `src/serverFunctions/gsc.ts`, `src/serverFunctions/googleAccounts.ts` | not started | — |
+| Search performance, opportunities and table export | `src/serverFunctions/searchPerformance.ts`, `src/server/mcp/tools/search-console-tools.ts` | not started | — |
+| Search Console URL inspection | `src/server/mcp/tools/search-console-tools.ts` | not started | — |
+| GA4 authorization, property selection and revocation | `src/serverFunctions/ga4.ts`, `src/serverFunctions/googleAccounts.ts` | not started | — |
+| GA4 organic overview, landing pages, page performance and acquisition | `src/server/mcp/tools/google-analytics-tools.ts`, `src/server/features/ga4/services/Ga4ReportingService.ts` | not started | — |
+| GA4 key events, ecommerce, site search and audience | `src/server/mcp/tools/google-analytics-tools.ts` | not started | — |
+| GA4 measurement health and search opportunities | `src/server/features/ga4/services/Ga4MeasurementHealthService.ts`, `src/server/features/ga4/services/SearchOpportunityService.ts` | not started | — |
+| Report save/list/read/delete and HTML output | `src/server/mcp/tools/report-tools.ts`, `src/server/features/reports/services/ReportService.ts` | not started | — |
+| Report templates and briefs | `src/server/mcp/tools/report-template-tools.ts`, `src/serverFunctions/reportTemplates.ts` | not started | — |
+| Dashboard-style SEO summaries and backlink snapshots | `src/serverFunctions/dashboard.ts`, `src/server/features/dashboard/services/DashboardService.ts` | not started | — |
+| Task skills: project setup, keyword research/clustering | `plugins/openseo/skills/seo-project-setup/SKILL.md`, `plugins/openseo/skills/keyword-research/SKILL.md`, `plugins/openseo/skills/keyword-clustering/SKILL.md` | in progress | `.agents/skills/keyword-snapshot/SKILL.md` tested with fixtures in Pi/Codex; not a replacement for these workflows. |
+| Task skills: audits, competition, local SEO, links and reports | `plugins/openseo/skills/` (seo-audit, competitive-landscape, competitor-analysis, local-seo, link-prospecting, seo-report) | not started | — |
+
+Scope boundary: hosted report share links (`src/serverFunctions/reports.ts` `shareReport`/`unshareReport`), workspace permissions and dashboard onboarding widgets are tied to the Web product; local HTML export can replace file sharing **but is not equivalent to a hosted public link**. Reassess this gap in the final parity review, not as a prerequisite for a usable local SEO tool. All tracked provider and Google operations remain unverified until exercised with authorized access; the live keyword-overview calls only validate that endpoint in US/en.
 
 Data access is not the same as agent workflow parity. Preserve or adapt OpenSEO's public SEO skills where useful; discoverable task workflows, not a flat list of commands, are the primary agent experience. Commands supply data and operations; the agent owns interpretation, writing, and changes to the user's website. A normal run should return a concise finding with provenance and a local evidence reference, and let the agent retrieve specific rows or pages only when needed. Paid operations do not require product-level budget approval or website-edit approval; those choices belong to the user and their agent.
 
