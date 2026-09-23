@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { resolve } from "node:path";
-import { keywordMetrics } from "./dataforseo.js";
 import { OperationError } from "./errors.js";
+import { keywordMetrics } from "./keywords.js";
 import { findProjectRoot, initProject, readContext, readProject, saveEvidence } from "./project.js";
 import { listReports, listTemplates } from "./reports.js";
 
@@ -9,7 +9,7 @@ const usage = `Usage:
   agenticseo init --domain example.com --location 2840 --language en [--project DIR]
   agenticseo context [--project DIR]
   agenticseo reports [--project DIR]
-  agenticseo keywords TERM... [--project DIR]`;
+  agenticseo keywords TERM... [--clickstream] [--project DIR]`;
 
 // Documented in README.md; agents branch on these instead of parsing stderr.
 const exitCodes = { input: 2, credentials: 3, provider: 4 } as const;
@@ -50,18 +50,31 @@ async function run([command, ...args]: string[]): Promise<unknown> {
   }
 
   if (command === "keywords") {
+    const clickstreamIndex = args.indexOf("--clickstream");
+    if (clickstreamIndex >= 0) args.splice(clickstreamIndex, 1);
     const keywords = [...new Set(args.map((arg) => arg.trim()).filter(Boolean))];
     if (args.some((arg) => arg.startsWith("--")) || keywords.length === 0 || keywords.length > 700) {
       throw new OperationError("input", "Provide 1–700 non-empty keyword terms");
     }
     const root = await findProjectRoot(projectOption);
     const project = await readProject(root);
-    const apiKey = process.env.DATAFORSEO_API_KEY;
-    if (!apiKey) throw new OperationError("credentials", "DATAFORSEO_API_KEY is required (base64 of DataForSEO login:password)");
     const fetchedAt = new Date().toISOString();
-    const result = await keywordMetrics(project, keywords, apiKey);
-    const evidence = await saveEvidence(root, fetchedAt, { provider: "DataForSEO", fetchedAt, project, keywords, ...result });
-    return { provider: "DataForSEO", fetchedAt, project, totalRows: result.rows.length, rows: result.rows.slice(0, 10), missingKeywords: result.missingKeywords, costUsd: result.costUsd, evidence };
+    const includeClickstreamData = clickstreamIndex >= 0;
+    const result = await keywordMetrics(project, keywords, { includeClickstreamData });
+    const evidence = await saveEvidence(root, fetchedAt, { provider: "DataForSEO", fetchedAt, project, keywords, includeClickstreamData, ...result });
+    return {
+      provider: "DataForSEO",
+      source: result.source,
+      fetchedAt,
+      project,
+      includeClickstreamData,
+      totalRows: result.rows.length,
+      // Monthly trends stay in the evidence file; they would dominate a short reply.
+      rows: result.rows.slice(0, 10).map(({ monthlySearches: _trend, ...row }) => row),
+      missingKeywords: result.missingKeywords,
+      costUsd: result.costUsd,
+      evidence,
+    };
   }
 
   throw new OperationError("input", usage);
