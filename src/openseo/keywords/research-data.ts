@@ -1,0 +1,167 @@
+// Ported from OpenSEO src/server/features/keywords/services/research/research-data.ts at commit
+// 0ffff93101043aad7600a3b6a499a0cd2887ef49.
+// Copyright (c) 2026 Ben Senescu. MIT License; see LICENSES/OpenSEO.txt.
+// Local changes: callers pass the local DataforseoClient instead of a billing customer,
+// the credit-attribution parameter is removed, and a missing monthly volume is
+// null instead of 0.
+import type { DataforseoClient } from "../dataforseo/client.js";
+import type { AdsKeywordIdeaItem } from "../dataforseo/google-ads.js";
+import type { LabsKeywordDataItem } from "../dataforseo/labs.js";
+import {
+  normalizeIntent,
+  normalizeKeyword,
+  type EnrichedKeyword,
+} from "./helpers.js";
+import type { KeywordSource } from "./selection.js";
+
+type FetchResearchRowsParams = {
+  seedKeyword: string;
+  locationCode: number;
+  languageCode: string;
+  resultLimit: number;
+  source: KeywordSource;
+  includeClickstreamData?: boolean;
+};
+
+function mapKeywordDataItems(items: LabsKeywordDataItem[]): EnrichedKeyword[] {
+  const rows: EnrichedKeyword[] = [];
+  const seen = new Set<string>();
+
+  for (const item of items) {
+    const keyword = item.keyword;
+    if (!keyword) continue;
+
+    const normalized = normalizeKeyword(keyword);
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+
+    // The clickstream-normalized block only exists when the caller opted into
+    // clickstream data (it doubles the request cost); prefer it when present.
+    const keywordInfo = item.keyword_info_normalized_with_clickstream
+      ?.search_volume
+      ? item.keyword_info_normalized_with_clickstream
+      : item.keyword_info;
+
+    rows.push({
+      keyword: normalized,
+      searchVolume: keywordInfo?.search_volume ?? null,
+      trend: (keywordInfo?.monthly_searches ?? []).map((entry) => ({
+        year: entry.year ?? 0,
+        month: entry.month ?? 0,
+        searchVolume: entry.search_volume ?? null,
+      })),
+      cpc: item.keyword_info?.cpc ?? null,
+      competition: item.keyword_info?.competition ?? null,
+      keywordDifficulty: item.keyword_properties?.keyword_difficulty ?? null,
+      intent: normalizeIntent(item.search_intent_info?.main_intent),
+    });
+  }
+
+  return rows;
+}
+
+/**
+ * Google Ads items carry volume / CPC / paid competition but no keyword
+ * difficulty or search intent (those are Labs-only).
+ */
+export function mapAdsKeywordItems(
+  items: AdsKeywordIdeaItem[],
+): EnrichedKeyword[] {
+  const rows: EnrichedKeyword[] = [];
+  const seen = new Set<string>();
+
+  for (const item of items) {
+    const keyword = item.keyword;
+    if (!keyword) continue;
+
+    const normalized = normalizeKeyword(keyword);
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+
+    rows.push({
+      keyword: normalized,
+      searchVolume: item.search_volume ?? null,
+      trend: (item.monthly_searches ?? []).map((entry) => ({
+        year: entry.year ?? 0,
+        month: entry.month ?? 0,
+        searchVolume: entry.search_volume ?? null,
+      })),
+      cpc: item.cpc ?? null,
+      competition:
+        item.competition_index != null ? item.competition_index / 100 : null,
+      keywordDifficulty: null,
+      intent: "unknown",
+    });
+  }
+
+  return rows;
+}
+
+/** Research rows for countries DataForSEO Labs doesn't support. */
+export async function fetchGoogleAdsResearchRows(
+  params: Omit<FetchResearchRowsParams, "source">,
+  dataforseo: DataforseoClient,
+): Promise<EnrichedKeyword[]> {
+  return mapAdsKeywordItems(
+    await dataforseo.keywords.adsIdeas({
+      keyword: params.seedKeyword,
+      locationCode: params.locationCode,
+      languageCode: params.languageCode,
+      limit: params.resultLimit,
+    }),
+  );
+}
+
+async function fetchRelatedRows(
+  params: Omit<FetchResearchRowsParams, "source">,
+  dataforseo: DataforseoClient,
+) {
+  const items = await dataforseo.keywords.related({
+    keyword: params.seedKeyword,
+    locationCode: params.locationCode,
+    languageCode: params.languageCode,
+    limit: params.resultLimit,
+    depth: 3,
+    includeClickstreamData: params.includeClickstreamData,
+  });
+
+  // Related items wrap the keyword payload one level deeper; unwrap and reuse
+  // the same mapper as suggestions/ideas.
+  return mapKeywordDataItems(
+    items
+      .map((item) => item.keyword_data)
+      .filter((data): data is NonNullable<typeof data> => data != null),
+  );
+}
+
+export async function fetchResearchRowsBySource(
+  params: FetchResearchRowsParams,
+  dataforseo: DataforseoClient,
+): Promise<EnrichedKeyword[]> {
+
+  if (params.source === "related") {
+    return fetchRelatedRows(params, dataforseo);
+  }
+
+  if (params.source === "suggestions") {
+    return mapKeywordDataItems(
+      await dataforseo.keywords.suggestions({
+        keyword: params.seedKeyword,
+        locationCode: params.locationCode,
+        languageCode: params.languageCode,
+        limit: params.resultLimit,
+        includeClickstreamData: params.includeClickstreamData,
+      }),
+    );
+  }
+
+  return mapKeywordDataItems(
+    await dataforseo.keywords.ideas({
+      keyword: params.seedKeyword,
+      locationCode: params.locationCode,
+      languageCode: params.languageCode,
+      limit: params.resultLimit,
+      includeClickstreamData: params.includeClickstreamData,
+    }),
+  );
+}

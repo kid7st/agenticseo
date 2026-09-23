@@ -1,8 +1,8 @@
 // Ported from OpenSEO src/server/lib/dataforseo/google-ads.ts at commit
-// 0ffff93101043aad7600a3b6a499a0cd2887ef49 (search volume subset).
+// 0ffff93101043aad7600a3b6a499a0cd2887ef49.
 // Copyright (c) 2026 Ben Senescu. MIT License; see LICENSES/OpenSEO.txt.
-// Local change: search volume items are validated with a loose Zod schema of the
-// fields keyword-metrics reads.
+// Local change: items are validated with a loose Zod schema of the fields the
+// callers read.
 import { z } from "zod";
 import { AppError } from "../platform.js";
 import { dataforseoPost } from "./core.js";
@@ -39,13 +39,24 @@ export interface AdsKeywordItem {
   monthly_searches?: LabsMonthlySearch[] | null;
   [key: string]: unknown;
 }
+export type AdsKeywordIdeaItem = AdsKeywordItem;
 
 type KeywordsDataTask<T> = DataforseoTaskLike & { result?: T[] };
 
-function taskItems<T>(task: KeywordsDataTask<T>): T[] {
+function taskItems(task: KeywordsDataTask<unknown>): AdsKeywordItem[] {
   // keywords_data tasks return keyword items directly in `result` (no nested
   // `items` wrapper like Labs).
-  return task.result ?? [];
+  const items = z.array(adsKeywordItemSchema).safeParse(task.result ?? []);
+  if (!items.success) {
+    throw new AppError(
+      "INTERNAL_ERROR",
+      `DataForSEO google_ads returned an invalid response shape: ${items.error.issues
+        .slice(0, 3)
+        .map((issue) => `${issue.path.join(".")} ${issue.message}`)
+        .join("; ")}`,
+    );
+  }
+  return items.data;
 }
 
 export async function fetchAdsSearchVolume(input: {
@@ -73,18 +84,34 @@ export async function fetchAdsSearchVolume(input: {
     ],
   );
   const task = assertOk(response);
-  const items = z.array(adsKeywordItemSchema).safeParse(taskItems(task));
-  if (!items.success) {
-    throw new AppError(
-      "INTERNAL_ERROR",
-      `DataForSEO google_ads search_volume returned an invalid response shape: ${items.error.issues
-        .slice(0, 3)
-        .map((issue) => `${issue.path.join(".")} ${issue.message}`)
-        .join("; ")}`,
-    );
-  }
   return {
-    data: items.data,
+    data: taskItems(task),
+    billing: buildTaskBilling(task),
+  };
+}
+
+export async function fetchAdsKeywordIdeas(input: {
+  keyword: string;
+  locationCode: number;
+  languageCode: string;
+  limit: number;
+}): Promise<DataforseoApiResponse<AdsKeywordIdeaItem[]>> {
+  const response = await dataforseoPost<KeywordsDataTask<AdsKeywordIdeaItem>>(
+    "/v3/keywords_data/google_ads/keywords_for_keywords/live",
+    [
+      {
+        keywords: [input.keyword],
+        location_code: input.locationCode,
+        language_code: input.languageCode,
+        sort_by: "search_volume",
+      },
+    ],
+  );
+  const task = assertOk(response);
+  // The endpoint has no limit parameter (it can return thousands of
+  // suggestions for one flat fee); truncate to what the caller asked for.
+  return {
+    data: taskItems(task).slice(0, input.limit),
     billing: buildTaskBilling(task),
   };
 }

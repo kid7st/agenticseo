@@ -1,8 +1,8 @@
 // Ported from OpenSEO src/server/lib/dataforseo/labs.ts at commit
-// 0ffff93101043aad7600a3b6a499a0cd2887ef49 (keyword overview subset).
+// 0ffff93101043aad7600a3b6a499a0cd2887ef49 (keyword overview and keyword research subset).
 // Copyright (c) 2026 Ben Senescu. MIT License; see LICENSES/OpenSEO.txt.
-// Local change: keyword overview items are validated with a Zod schema of the
-// fields keyword-metrics reads; the schema is loose, so every other field is kept.
+// Local change: items are validated with loose Zod schemas of the fields the
+// callers read, so every other field is kept.
 import { z } from "zod";
 import { dataforseoPost } from "./core.js";
 import {
@@ -53,6 +53,12 @@ export interface LabsKeywordDataItem {
 /** keyword_overview items share the keyword-data field surface. */
 export type KeywordOverviewItem = LabsKeywordDataItem;
 
+/** related_keywords wraps the keyword payload one level deeper. */
+type RelatedKeywordItem = {
+  keyword_data?: LabsKeywordDataItem | null;
+  [key: string]: unknown;
+};
+
 const nullableNumber = z.number().nullable().optional();
 
 const labsKeywordInfoSchema = z.looseObject({
@@ -74,7 +80,7 @@ const labsKeywordInfoSchema = z.looseObject({
 
 export const monthlySearchesSchema = labsKeywordInfoSchema.shape.monthly_searches;
 
-const keywordOverviewItemSchema = z.looseObject({
+const keywordDataItemSchema = z.looseObject({
   keyword: z.string().nullable().optional(),
   keyword_info: labsKeywordInfoSchema.nullable().optional(),
   keyword_info_normalized_with_clickstream: labsKeywordInfoSchema
@@ -89,6 +95,97 @@ const keywordOverviewItemSchema = z.looseObject({
     .nullable()
     .optional(),
 });
+
+const relatedKeywordItemSchema = z.looseObject({
+  keyword_data: keywordDataItemSchema.nullable().optional(),
+});
+
+export async function fetchRelatedKeywords(input: {
+  keyword: string;
+  locationCode: number;
+  languageCode: string;
+  limit: number;
+  depth?: number;
+  includeClickstreamData?: boolean;
+}): Promise<DataforseoApiResponse<RelatedKeywordItem[]>> {
+  const response = await dataforseoPost<
+    DataforseoItemsTask<RelatedKeywordItem>
+  >("/v3/dataforseo_labs/google/related_keywords/live", [
+    {
+      keyword: input.keyword,
+      location_code: input.locationCode,
+      language_code: input.languageCode,
+      limit: input.limit,
+      depth: input.depth ?? 3,
+      // Clickstream-refined volumes DOUBLE the request cost, so they are
+      // opt-in — see specs/0004-keyword-data-source-routing.md.
+      include_clickstream_data: input.includeClickstreamData ?? false,
+      include_serp_info: false,
+    },
+  ]);
+  const task = assertOk(response);
+  return {
+    data: parseTaskItems("related_keywords", task, relatedKeywordItemSchema),
+    billing: buildTaskBilling(task),
+  };
+}
+
+export async function fetchKeywordSuggestions(input: {
+  keyword: string;
+  locationCode: number;
+  languageCode: string;
+  limit: number;
+  includeClickstreamData?: boolean;
+}): Promise<DataforseoApiResponse<LabsKeywordDataItem[]>> {
+  const response = await dataforseoPost<
+    DataforseoItemsTask<LabsKeywordDataItem>
+  >("/v3/dataforseo_labs/google/keyword_suggestions/live", [
+    {
+      keyword: input.keyword,
+      location_code: input.locationCode,
+      language_code: input.languageCode,
+      limit: input.limit,
+      include_clickstream_data: input.includeClickstreamData ?? false,
+      include_serp_info: false,
+      include_seed_keyword: true,
+      ignore_synonyms: false,
+      exact_match: false,
+    },
+  ]);
+  const task = assertOk(response);
+  return {
+    data: parseTaskItems("keyword_suggestions", task, keywordDataItemSchema),
+    billing: buildTaskBilling(task),
+  };
+}
+
+export async function fetchKeywordIdeas(input: {
+  keyword: string;
+  locationCode: number;
+  languageCode: string;
+  limit: number;
+  includeClickstreamData?: boolean;
+}): Promise<DataforseoApiResponse<LabsKeywordDataItem[]>> {
+  const response = await dataforseoPost<
+    DataforseoItemsTask<LabsKeywordDataItem>
+  >("/v3/dataforseo_labs/google/keyword_ideas/live", [
+    {
+      keywords: [input.keyword],
+      location_code: input.locationCode,
+      language_code: input.languageCode,
+      limit: input.limit,
+      include_clickstream_data: input.includeClickstreamData ?? false,
+      include_serp_info: false,
+      ignore_synonyms: false,
+      closely_variants: false,
+    },
+  ]);
+  const task = assertOk(response);
+  return {
+    data: parseTaskItems("keyword_ideas", task, keywordDataItemSchema),
+    billing: buildTaskBilling(task),
+  };
+}
 
 export async function fetchKeywordOverview(input: {
   keywords: string[];
@@ -108,7 +205,7 @@ export async function fetchKeywordOverview(input: {
   ]);
   const task = assertOk(response);
   return {
-    data: parseTaskItems("keyword_overview", task, keywordOverviewItemSchema),
+    data: parseTaskItems("keyword_overview", task, keywordDataItemSchema),
     billing: buildTaskBilling(task),
   };
 }
