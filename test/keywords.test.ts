@@ -96,8 +96,8 @@ test("CLI discovers a project, saves full evidence, and maps failures to exit co
 
     const result = runCli(nested, ["keywords", "seo audit", "seo tool", "missing term"], { env: { DATAFORSEO_API_KEY: "TEST_KEY" }, mock: true });
     assert.equal(result.status, 0, result.stderr);
-    const output = JSON.parse(result.stdout) as { project: typeof project; rows: unknown[]; missingKeywords: string[]; evidence: string };
-    assert.equal(output.project.domain, "example.com");
+    const output = JSON.parse(result.stdout) as { market: { locationCode: number; languageCode: string }; rows: unknown[]; missingKeywords: string[]; evidence: string };
+    assert.deepEqual(output.market, { locationCode: 2840, languageCode: "en" });
     assert.equal(output.rows.length, 1);
     assert.deepEqual(output.missingKeywords, ["seo tool", "missing term"]);
     const saved = JSON.parse(await readFile(output.evidence, "utf8")) as { calls: Array<{ path: string[]; costUsd: number; items: unknown }>; rows: unknown[] };

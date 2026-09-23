@@ -18,7 +18,7 @@ npm install
 npm run build
 npm link
 cd /path/to/your-website
-agenticseo init --domain example.com --location 2840 --language en
+agenticseo init --domain example.com --location US
 agenticseo context
 agenticseo research "seo audit"
 agenticseo keywords "seo audit" "seo audit tool"
@@ -26,16 +26,16 @@ agenticseo serp "seo audit"
 agenticseo reports
 ```
 
-`2840/en` is the US/English market; use your own DataForSEO location and language codes. Commands find the project from the current directory or an ancestor; pass `--project DIR` to use another root.
+`--location` takes a two-letter country code or a DataForSEO country location code (`US` is `2840`); `--language` is optional and defaults to the country's main language. The pair is checked against OpenSEO's country table before anything is saved, so an unsupported market fails without a paid call. Commands find the project from the current directory or an ancestor; pass `--project DIR` to use another root.
 
-- `init` creates `.agenticseo/project.json` with the bare domain (`www`, scheme and path removed) and the market.
+- `init` creates `.agenticseo/project.json` with the bare domain (`www`, scheme and path removed) and the market. The file is checked again on every read.
 - `context` validates and prints `.agenticseo/context.json`, the project's shared memory in OpenSEO's vocabulary: `sections` (`business_overview`, `current_goal`, `positioning`, `writing_preferences`), `customSections`, `competitors`, `keyPages` and a `researchLog` of dated findings, plus report templates. People and agents edit that file directly. A missing file is an empty context; an invalid one fails with the exact field. Competitor domains and page URLs are shown in canonical form, the log shows the newest 20 entries from the last 90 days, and `today` (local date) is given for new entries; a later date is rejected.
 - `reports` indexes `.agenticseo/reports/*.md`. A report's first line is its `# Title` and the text before its first section is its summary; an optional self-contained `.html` file with the same name is its HTML export. Templates live in `.agenticseo/templates/*.md` in the same shape.
 - `research "SEED" [--limit 150|300|500] [--clickstream]` runs OpenSEO's keyword research for one seed: DataForSEO Labs related keywords, falling back to suggestions and then ideas until at least five non-seed keywords are found, or Google Ads keyword ideas where Labs does not cover the market. It returns the first 25 rows; a repeat within 24 hours comes from `.agenticseo/cache/` at no cost (`cached: true`).
 - `keywords TERM... [--clickstream]` returns volume, CPC, competition, keyword difficulty and intent for up to 700 terms, from Labs keyword overview or, outside Labs markets, Google Ads search volume. Terms with no metric at all are listed in `missingKeywords`.
 - `serp "QUERY" [--depth 10-100]` returns live Google results of every type (default depth 20), trimmed to type, rank, title, URL, domain and description.
 
-Paid commands report `source` (which DataForSEO API answered), date, market and `costUsd`, and save an evidence file under `.agenticseo/evidence/` with all rows, monthly trends and the raw provider items of each call. Evidence and cache are ignored by Git; context and reports are meant to be versioned with the site. Missing metrics stay `null`, never 0. Google Ads markets have no keyword difficulty or intent. `--clickstream` asks Labs for clickstream-refined volume at twice the cost and is refused for Google Ads markets. If the key is missing, a paid command fails without a lookup.
+`keywords`, `research` and `serp` take `--location` and `--language` to run one call in another market; as in OpenSEO, changing only the location switches to that country's language. Paid commands report `source` (which DataForSEO API answered), date, the resolved `market` and `costUsd`, and save an evidence file under `.agenticseo/evidence/` with all rows, monthly trends and the raw provider items of each call. Evidence and cache are ignored by Git; context and reports are meant to be versioned with the site. Missing metrics stay `null`, never 0. Google Ads markets have no keyword difficulty or intent. `--clickstream` asks Labs for clickstream-refined volume at twice the cost and is refused for Google Ads markets. If the key is missing, a paid command fails without a lookup.
 
 Every command prints one JSON document on stdout when it succeeds. Failures print a message on stderr and exit with a code an agent can branch on:
 

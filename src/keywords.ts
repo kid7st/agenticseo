@@ -4,11 +4,11 @@ import { createDataforseoClient, ledgerCost, type ProviderCall } from "./openseo
 import { fetchKeywordMetricsForList, type KeywordMetricRow } from "./openseo/dataforseo/keyword-metrics.js";
 import { getKeywordDataProvider } from "./openseo/keyword-locations.js";
 import { research } from "./openseo/keywords/research.js";
-import type { Project } from "./project.js";
+import type { Market } from "./market.js";
 
 /** OpenSEO offers clickstream only where Labs serves the market; say so instead of ignoring the flag. */
-function assertClickstreamAvailable(project: Project, clickstream: boolean) {
-  if (clickstream && getKeywordDataProvider(project.locationCode) !== "labs") {
+function assertClickstreamAvailable(market: Market, clickstream: boolean) {
+  if (clickstream && getKeywordDataProvider(market.locationCode) !== "labs") {
     throw new OperationError("input", "--clickstream applies only to markets served by DataForSEO Labs");
   }
 }
@@ -23,19 +23,19 @@ function hasMetrics(row: KeywordMetricRow) {
     || row.monthlySearches.length > 0;
 }
 
-export async function keywordMetrics(project: Project, keywords: string[], options: { includeClickstreamData: boolean }) {
-  assertClickstreamAvailable(project, options.includeClickstreamData);
+export async function keywordMetrics(market: Market, keywords: string[], options: { includeClickstreamData: boolean }) {
+  assertClickstreamAvailable(market, options.includeClickstreamData);
   const calls: ProviderCall[] = [];
   const allRows = await fetchKeywordMetricsForList(createDataforseoClient(calls), {
     keywords,
-    locationCode: project.locationCode,
-    languageCode: project.languageCode,
+    locationCode: market.locationCode,
+    languageCode: market.languageCode,
     includeClickstreamData: options.includeClickstreamData,
   });
   const rows = allRows.filter(hasMetrics);
   const returned = new Set(rows.map((row) => row.keyword.toLowerCase()));
   return {
-    source: getKeywordDataProvider(project.locationCode),
+    source: getKeywordDataProvider(market.locationCode),
     rows,
     missingKeywords: keywords.filter((keyword) => !returned.has(keyword.toLowerCase())),
     costUsd: ledgerCost(calls),
@@ -45,14 +45,14 @@ export async function keywordMetrics(project: Project, keywords: string[], optio
 
 /** OpenSEO's research_keywords for one seed: auto source fallback, cached for 24 hours in the project. */
 export async function researchKeywords(
-  project: Project,
+  market: Market,
   seed: string,
   options: { resultLimit: 150 | 300 | 500; clickstream: boolean; cacheDirectory: string },
 ) {
-  assertClickstreamAvailable(project, options.clickstream);
+  assertClickstreamAvailable(market, options.clickstream);
   const calls: ProviderCall[] = [];
   const result = await research(
-    { keywords: [seed], locationCode: project.locationCode, languageCode: project.languageCode, resultLimit: options.resultLimit, mode: "auto", clickstream: options.clickstream },
+    { keywords: [seed], locationCode: market.locationCode, languageCode: market.languageCode, resultLimit: options.resultLimit, mode: "auto", clickstream: options.clickstream },
     { client: createDataforseoClient(calls), cache: createFileCache(options.cacheDirectory) },
   );
   // A cache hit makes no provider call, so nothing was spent.
@@ -60,9 +60,9 @@ export async function researchKeywords(
 }
 
 /** OpenSEO's get_serp_results for one query, trimmed to the same fields its MCP tool returns. */
-export async function serpResults(project: Project, keyword: string, depth: number) {
+export async function serpResults(market: Market, keyword: string, depth: number) {
   const calls: ProviderCall[] = [];
-  const items = await createDataforseoClient(calls).serp.live({ keyword, locationCode: project.locationCode, languageCode: project.languageCode, depth });
+  const items = await createDataforseoClient(calls).serp.live({ keyword, locationCode: market.locationCode, languageCode: market.languageCode, depth });
   return {
     items: items.slice(0, depth).map((item) => ({
       type: item.type,

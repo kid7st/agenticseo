@@ -17,12 +17,17 @@ import {
   RESEARCH_LOG_RETENTION_DAYS,
   researchLogSummarySchema,
 } from "./openseo/projectContext.js";
+import { isLanguageServedForLocation, isSupportedLanguageCode, isSupportedLocationCode } from "./openseo/keyword-locations.js";
 import { parseResearchTarget } from "./openseo/researchScope.js";
 
+// The market is checked on every read too, since people edit project.json by hand.
 const projectSchema = z.strictObject({
   domain: z.string().min(1),
-  locationCode: z.number().int().positive(),
-  languageCode: z.string().regex(/^[a-z]{2}$/),
+  locationCode: z.number().int().refine(isSupportedLocationCode, "Unsupported DataForSEO location code"),
+  languageCode: z.string().refine(isSupportedLanguageCode, "Unsupported language code"),
+}).refine((project) => isLanguageServedForLocation(project.locationCode, project.languageCode), {
+  message: "This language is not available for this location",
+  path: ["languageCode"],
 });
 
 export type Project = z.infer<typeof projectSchema>;
@@ -134,7 +139,7 @@ export async function readProject(root: string): Promise<Project> {
   return project;
 }
 
-export async function initProject(root: string, input: { domain?: string; locationCode: number; languageCode?: string }) {
+export async function initProject(root: string, input: { domain?: string; locationCode: number; languageCode: string }) {
   // OpenSEO canonicalizes a project domain to the bare host (www, scheme and path stripped).
   const target = parseResearchTarget(input.domain ?? "", "domain");
   if (!target.ok) throw new OperationError("input", `--domain: ${target.message}`);
