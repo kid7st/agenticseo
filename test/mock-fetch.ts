@@ -6,6 +6,11 @@ const task = (items: unknown[], cost: number) => Response.json({ status_code: 20
 
 globalThis.fetch = async (input, init) => {
   const url = String(input);
+  if (url === `${api}/backlinks/referring_domains/live`) {
+    // Answers differently with and without the spam cutoff, so CLI tests can see which was sent.
+    const hidesSpam = JSON.stringify(JSON.parse(String(init?.body))[0].filters ?? []).includes("backlinks_spam_score");
+    return task([{ domain: hidesSpam ? "without-spam.com" : "with-spam.com" }], 0.02);
+  }
   const request = JSON.parse(String(init?.body)) as Array<{ keywords?: string[]; location_code?: number }>;
   if (init?.method !== "POST" || request[0]?.location_code !== 2840) throw new Error("Unexpected DataForSEO request");
 

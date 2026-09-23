@@ -9,6 +9,13 @@ import {
   DataforseoChargedTaskError,
   type DataforseoApiResponse,
 } from "./envelope.js";
+import {
+  fetchBacklinksHistory,
+  fetchBacklinksRows,
+  fetchBacklinksSummary,
+  fetchDomainPagesSummary,
+  fetchReferringDomains,
+} from "./backlinks.js";
 import { fetchAdsKeywordIdeas, fetchAdsSearchVolume } from "./google-ads.js";
 import {
   fetchDomainRankOverview,
@@ -50,6 +57,13 @@ function meter<I, T>(
 
 export function createDataforseoClient(ledger: ProviderCall[]) {
   return {
+    backlinks: {
+      summary: meter(ledger, fetchBacklinksSummary),
+      rows: meter(ledger, fetchBacklinksRows),
+      referringDomains: meter(ledger, fetchReferringDomains),
+      domainPages: meter(ledger, fetchDomainPagesSummary),
+      history: meter(ledger, fetchBacklinksHistory),
+    },
     keywords: {
       related: meter(ledger, fetchRelatedKeywords),
       suggestions: meter(ledger, fetchKeywordSuggestions),

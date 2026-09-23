@@ -41,7 +41,7 @@ export async function withFetch<T>(handler: Handler, run: () => Promise<T>, apiK
   process.env.DATAFORSEO_API_KEY = apiKey;
   globalThis.fetch = async (input, init = {}) => {
     const url = String(input);
-    requests.push({ url, body: JSON.parse(String(init.body)), authorization: new Headers(init.headers).get("Authorization") });
+    requests.push({ url, body: init.body == null ? undefined : JSON.parse(String(init.body)), authorization: new Headers(init.headers).get("Authorization") });
     return handler(url, init);
   };
   try {

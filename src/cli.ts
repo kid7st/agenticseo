@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { resolve } from "node:path";
 import { OperationError } from "./errors.js";
+import { backlinksDomains, backlinksLinks, backlinksOverview, backlinksPages, domainRatings } from "./backlinks.js";
 import { domainOverview, domainPages, rankedKeywords, serpCompetitors } from "./domain.js";
 import { keywordMetrics, researchKeywords, serpResults } from "./keywords.js";
 import { marketForCall, marketForNewProject } from "./market.js";
@@ -35,6 +36,21 @@ const usage = `Usage:
   agenticseo saved rename-tag TAG [--to NEW_NAME] [--color COLOR|none] [--project DIR]
   agenticseo saved delete-tag TAG [--project DIR]
   agenticseo saved refresh [--project DIR]
+  agenticseo backlinks overview TARGET [--scope SCOPE] [--include-spam] [--project DIR]
+  agenticseo backlinks links TARGET [--scope SCOPE] [--mode one_per_domain|as_is] [--include-spam]
+      [--sort rank|domainRank|spamScore|firstSeen] [--order desc|asc] [--page N] [--page-size 50|100|200]
+      [--include TERMS] [--exclude TERMS] [--min-domain-rank N] [--max-domain-rank N]
+      [--min-authority N] [--max-authority N] [--min-spam N] [--max-spam N]
+      [--link-type dofollow|nofollow] [--hide-lost] [--hide-broken] [--from-domain DOMAIN] [--project DIR]
+  agenticseo backlinks domains TARGET [--scope SCOPE] [--include-spam]
+      [--sort domain|backlinks|referringPages|rank|spamScore|firstSeen|brokenBacklinks] [--order desc|asc]
+      [--page N] [--page-size 50|100|200] [--include TERMS] [--exclude TERMS]
+      [--min-backlinks N] [--max-backlinks N] [--min-rank N] [--max-rank N] [--min-spam N] [--max-spam N] [--project DIR]
+  agenticseo backlinks pages TARGET [--scope SCOPE] [--sort backlinks|referringDomains|rank|brokenBacklinks]
+      [--order desc|asc] [--page N] [--page-size 50|100|200] [--include TERMS] [--exclude TERMS]
+      [--min-backlinks N] [--max-backlinks N] [--min-referring-domains N] [--max-referring-domains N]
+      [--min-rank N] [--max-rank N] [--project DIR]
+  agenticseo domain-rating DOMAIN... [--project DIR]
   agenticseo query "SELECT ..." [--project DIR]
 MARKET overrides the project's market for one call: --location US|2840 [--language en]
 FILTERS: --search TEXT --include TERM,... --exclude TERM,... --tags TAG,... --min-volume N --max-volume N
@@ -347,6 +363,96 @@ async function run([command, ...args]: string[]): Promise<unknown> {
       return { provider: "DataForSEO", fetchedAt, updated: result.updated, costUsd: result.costUsd, evidence };
     }
     throw new OperationError("input", usage);
+  }
+
+  if (command === "backlinks") {
+    const view = args.shift();
+    if (view !== "overview" && view !== "links" && view !== "domains" && view !== "pages") throw new OperationError("input", usage);
+    const scope = enumOption<ResearchScope>(args, "--scope", RESEARCH_SCOPES);
+    // OpenSEO's MCP tools drop spammy referring domains by default; the web app shows them.
+    const hideSpam = view === "pages" ? undefined : !flag(args, "--include-spam");
+    const page = intOption(args, "--page", 1, Number.MAX_SAFE_INTEGER) ?? 1;
+    const pageSize = Number(option(args, "--page-size") ?? 100);
+    if (pageSize !== 50 && pageSize !== 100 && pageSize !== 200) throw new OperationError("input", "--page-size must be 50, 100 or 200");
+    const sortOrder = enumOption(args, "--order", ["desc", "asc"] as const) ?? "desc";
+    const range = (name: string) => numberOption(args, name);
+    const text = { include: option(args, "--include"), exclude: option(args, "--exclude") };
+    const list = { page, pageSize, sortOrder };
+    const root = await findProjectRoot(projectOption);
+    const project = await readProject(root);
+    const cacheDir = await cacheDirectory(root);
+    let result: { calls: unknown[]; cached: boolean; costUsd: number };
+    let summary: Record<string, unknown>;
+    if (view === "overview") {
+      const target = singlePhrase(args, "domain or URL");
+      const overview = await backlinksOverview({ target, scope, hideSpam: hideSpam ?? true, cacheDirectory: cacheDir });
+      result = overview;
+      const { displayTarget, scope: resolved, summary: totals, trends, fetchedAt } = overview.overview;
+      summary = {
+        target: displayTarget, scope: resolved, scopeNote: overview.scopeNote, fetchedAt, summary: totals, trends,
+        // The first rows in the MCP tool's order; all 100 are in the evidence.
+        referringDomains: overview.referringDomains && { totalCount: overview.referringDomains.totalCount, rows: overview.referringDomains.rows.slice(0, 25) },
+      };
+    } else if (view === "links") {
+      const input = {
+        ...list, scope, hideSpam: hideSpam ?? true,
+        sortField: enumOption(args, "--sort", ["rank", "domainRank", "spamScore", "firstSeen"] as const) ?? "firstSeen",
+        mode: enumOption(args, "--mode", ["one_per_domain", "as_is"] as const) ?? "one_per_domain",
+        filters: {
+          ...text,
+          minDomainRank: range("--min-domain-rank"), maxDomainRank: range("--max-domain-rank"),
+          minLinkAuthority: range("--min-authority"), maxLinkAuthority: range("--max-authority"),
+          minSpamScore: range("--min-spam"), maxSpamScore: range("--max-spam"),
+          linkType: enumOption(args, "--link-type", ["dofollow", "nofollow"] as const),
+          hideLost: flag(args, "--hide-lost") || undefined,
+          hideBroken: flag(args, "--hide-broken") || undefined,
+          domainFrom: option(args, "--from-domain"),
+        },
+      };
+      const links = await backlinksLinks({ target: singlePhrase(args, "domain or URL"), ...input, cacheDirectory: cacheDir });
+      result = links;
+      const { calls: _calls, cached: _cached, costUsd: _cost, rows, ...rest } = links;
+      // The MCP tool's columns; every field of every row is in the evidence.
+      summary = { ...rest, rows: rows.map(({ urlFrom, urlTo, anchor, isDofollow, rank, domainFromRank, spamScore, isLost, isBroken, firstSeen }) => ({ urlFrom, urlTo, anchor, isDofollow, rank, domainFromRank, spamScore, isLost, isBroken, firstSeen })) };
+    } else if (view === "domains") {
+      const input = {
+        ...list, scope, hideSpam: hideSpam ?? true,
+        sortField: enumOption(args, "--sort", ["domain", "backlinks", "referringPages", "rank", "spamScore", "firstSeen", "brokenBacklinks"] as const) ?? "backlinks",
+        filters: {
+          ...text,
+          minBacklinks: range("--min-backlinks"), maxBacklinks: range("--max-backlinks"),
+          minRank: range("--min-rank"), maxRank: range("--max-rank"),
+          minSpamScore: range("--min-spam"), maxSpamScore: range("--max-spam"),
+        },
+      };
+      const domains = await backlinksDomains({ target: singlePhrase(args, "domain or URL"), ...input, cacheDirectory: cacheDir });
+      result = domains;
+      const { calls: _calls, cached: _cached, costUsd: _cost, ...rest } = domains;
+      summary = rest;
+    } else {
+      const input = {
+        ...list, scope,
+        sortField: enumOption(args, "--sort", ["backlinks", "referringDomains", "rank", "brokenBacklinks"] as const) ?? "backlinks",
+        filters: {
+          ...text,
+          minBacklinks: range("--min-backlinks"), maxBacklinks: range("--max-backlinks"),
+          minReferringDomains: range("--min-referring-domains"), maxReferringDomains: range("--max-referring-domains"),
+          minRank: range("--min-rank"), maxRank: range("--max-rank"),
+        },
+      };
+      const pages = await backlinksPages({ target: singlePhrase(args, "domain or URL"), ...input, cacheDirectory: cacheDir });
+      result = pages;
+      const { calls: _calls, cached: _cached, costUsd: _cost, ...rest } = pages;
+      summary = rest;
+    }
+    const evidence = await saveEvidence(root, new Date().toISOString(), { provider: "DataForSEO", view, project, ...result });
+    return { provider: "DataForSEO", view, ...summary, cached: result.cached, costUsd: result.costUsd, evidence };
+  }
+
+  if (command === "domain-rating") {
+    const domains = positionals(args, "domains", 100);
+    // Ahrefs' Domain Rating License requires this attribution wherever the numbers appear.
+    return { provider: "Ahrefs", attribution: "Domain Rating by Ahrefs", ...(await domainRatings(domains, await cacheDirectory(await findProjectRoot(projectOption)))) };
   }
 
   if (command === "query") {
