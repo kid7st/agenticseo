@@ -10,6 +10,9 @@ import { normalizeAndValidateStartUrl, resolveStartUrlRedirects } from "./opense
 import { AUDIT_ISSUE_TYPES, ISSUE_SEVERITY_ORDER, type AuditIssueType, type IssueSeverity } from "./openseo/shared/audit-issues.js";
 import type { PageFetchClass } from "./openseo/shared/audit-fetch-class.js";
 import { HEARTBEAT_STALE_MS, runSiteAudit, type AuditRunConfig } from "./openseo/workflows/siteAuditRunner.js";
+import { getRequiredEnvValue } from "./openseo/platform.js";
+import { readStoredLighthousePayload } from "./openseo/lighthousePayload.js";
+import type { LighthouseCategory } from "./openseo/shared/lighthouse.js";
 import { dataDirectory, readProject } from "./project.js";
 import { transaction, withStore, type Store } from "./store.js";
 
@@ -21,6 +24,7 @@ type AuditRow = {
   current_phase: string;
   pages_crawled: number;
   pages_total: number;
+  lighthouse_total: number;
   error_detail: string | null;
   worker_pid: number | null;
   heartbeat_at: string | null;
@@ -55,11 +59,13 @@ function findAudit(db: Store, auditId?: string) {
 const liveStatus = (row: AuditRow) => (row.status === "running" && !workerAlive(row) ? "interrupted" : row.status);
 
 /** Validate the target (URL policy and redirects, as OpenSEO's AuditService does), record the audit and run it. */
-export async function startAudit(root: string, input: { url?: string; maxPages: number; allowPrivate: boolean; wait: boolean }) {
+export async function startAudit(root: string, input: { url?: string; maxPages: number; allowPrivate: boolean; lighthouse: boolean; wait: boolean }) {
+  // Lighthouse is billed by DataForSEO: a missing key fails now, not after the crawl.
+  if (input.lighthouse) await getRequiredEnvValue("DATAFORSEO_API_KEY");
   const policy = { allowPrivate: input.allowPrivate };
   const target = input.url ?? `https://${(await readProject(root)).domain}/`;
   const startUrl = await resolveStartUrlRedirects(await normalizeAndValidateStartUrl(target, policy), policy);
-  const config: AuditRunConfig = { maxPages: input.maxPages, allowPrivate: input.allowPrivate };
+  const config: AuditRunConfig = { maxPages: input.maxPages, allowPrivate: input.allowPrivate, lighthouse: input.lighthouse };
   const auditId = randomUUID();
   const token = randomUUID();
   const now = new Date().toISOString();
@@ -133,6 +139,19 @@ export async function auditStatus(root: string, auditId?: string) {
       failed: `agenticseo audit resume ${row.id}`,
       completed: `agenticseo audit issues ${row.id}`,
     }[status];
+    const config = JSON.parse(row.config) as AuditRunConfig;
+    const lighthouse = config.lighthouse
+      ? {
+          total: row.lighthouse_total,
+          ...(db
+            .prepare(
+              `SELECT COUNT(*) FILTER (WHERE error_message IS NULL) AS completed, COUNT(*) FILTER (WHERE error_message IS NOT NULL) AS failed,
+                      ROUND(COALESCE(SUM(cost_usd), 0), 6) AS costUsd
+               FROM audit_lighthouse_results WHERE audit_id = ?`,
+            )
+            .get(row.id) as { completed: number; failed: number; costUsd: number }),
+        }
+      : undefined;
     return {
       id: row.id,
       startUrl: row.start_url,
@@ -140,7 +159,8 @@ export async function auditStatus(root: string, auditId?: string) {
       phase: row.current_phase,
       pagesCrawled: row.pages_crawled,
       pagesTotal: row.pages_total,
-      maxPages: (JSON.parse(row.config) as AuditRunConfig).maxPages,
+      maxPages: config.maxPages,
+      lighthouse,
       startedAt: row.started_at,
       completedAt: row.completed_at,
       error: row.error_detail,
@@ -283,9 +303,10 @@ export async function deleteAudit(root: string, auditId: string) {
 
 /**
  * OpenSEO's audit results export (src/client/features/audit/results/export.ts): the
- * issues or pages table with the same CSV columns and JSON fields, as CSV or JSON lines.
+ * issues, pages or Lighthouse performance table with the same CSV columns and JSON
+ * fields, as CSV or JSON lines.
  */
-export async function exportAudit(root: string, input: { auditId?: string; table: "issues" | "pages"; format: "csv" | "jsonl"; out?: string }) {
+export async function exportAudit(root: string, input: { auditId?: string; table: "issues" | "pages" | "performance"; format: "csv" | "jsonl"; out?: string }) {
   const { auditId, rowCount, content } = await withStore(root, (db) => {
     const audit = findAudit(db, input.auditId);
     if (input.table === "issues") {
@@ -297,6 +318,25 @@ export async function exportAudit(root: string, input: { auditId?: string; table
         toCsv(
           ["Severity", "Issue", "URL", "Details", "How To Fix"],
           rows.map((row) => [row.severity, row.issue, row.url, row.details === null ? "" : JSON.stringify(row.details), row.howToFix]),
+        );
+      return { auditId: audit.id, rowCount: rows.length, content: input.format === "csv" ? csv() : toJsonl(rows) };
+    }
+    if (input.table === "performance") {
+      const rows = selectLighthouse(db, audit.id).map((row) => ({
+        url: row.url,
+        strategy: row.strategy,
+        performance: row.performance_score,
+        accessibility: row.accessibility_score,
+        seo: row.seo_score,
+        lcpMs: row.lcp_ms,
+        cls: row.cls,
+        inpMs: row.inp_ms,
+        ttfbMs: row.ttfb_ms,
+      }));
+      const csv = () =>
+        toCsv(
+          ["URL", "Device", "Performance", "Accessibility", "SEO", "LCP (ms)", "CLS", "INP (ms)", "TTFB (ms)"],
+          rows.map((row) => [row.url, row.strategy, row.performance, row.accessibility, row.seo, row.lcpMs, row.cls, row.inpMs, row.ttfbMs]),
         );
       return { auditId: audit.id, rowCount: rows.length, content: input.format === "csv" ? csv() : toJsonl(rows) };
     }
@@ -317,4 +357,78 @@ export async function exportAudit(root: string, input: { auditId?: string; table
   if (rowCount === 0) throw new OperationError("input", `Audit ${auditId} has no ${input.table}; nothing to export`);
   const file = await writeExport(root, { name: `audit-${input.table}`, format: input.format, content, out: input.out });
   return { auditId, table: input.table, file, format: input.format, rowCount };
+}
+
+type LighthouseRow = {
+  id: string;
+  url: string;
+  strategy: "mobile" | "desktop";
+  performance_score: number | null;
+  accessibility_score: number | null;
+  best_practices_score: number | null;
+  seo_score: number | null;
+  lcp_ms: number | null;
+  cls: number | null;
+  inp_ms: number | null;
+  ttfb_ms: number | null;
+  error_message: string | null;
+  payload_json: string | null;
+  cost_usd: number;
+  fetched_at: string;
+};
+
+function selectLighthouse(db: Store, auditId: string) {
+  return db
+    .prepare(
+      `SELECT r.*, p.url FROM audit_lighthouse_results r JOIN audit_pages p ON p.id = r.page_id
+       WHERE r.audit_id = ? ORDER BY p.rowid, r.strategy DESC`,
+    )
+    .all(auditId) as LighthouseRow[];
+}
+
+/** Every Lighthouse check's scores and Core Web Vitals, with its result id and issue count. */
+export async function lighthouseResults(root: string, auditId?: string) {
+  return withStore(root, (db) => {
+    const audit = findAudit(db, auditId);
+    const rows = selectLighthouse(db, audit.id);
+    return {
+      auditId: audit.id,
+      costUsd: Math.round(rows.reduce((sum, row) => sum + row.cost_usd, 0) * 1e6) / 1e6,
+      results: rows.map((row) => ({
+        resultId: row.id,
+        url: row.url,
+        strategy: row.strategy,
+        scores: { performance: row.performance_score, accessibility: row.accessibility_score, bestPractices: row.best_practices_score, seo: row.seo_score },
+        lcpMs: row.lcp_ms,
+        cls: row.cls,
+        inpMs: row.inp_ms,
+        ttfbMs: row.ttfb_ms,
+        issueCount: row.payload_json === null ? null : readStoredLighthousePayload(row.payload_json).report.issues.length,
+        error: row.error_message,
+      })),
+    };
+  });
+}
+
+/** One Lighthouse check's issues, largest savings first (OpenSEO's getAuditLighthouseIssues). */
+export async function lighthouseIssues(root: string, input: { auditId?: string; resultId: string; category?: LighthouseCategory }) {
+  return withStore(root, (db) => {
+    const audit = findAudit(db, input.auditId);
+    const row = selectLighthouse(db, audit.id).find((candidate) => candidate.id === input.resultId);
+    if (!row) throw new OperationError("input", `No Lighthouse result ${input.resultId} in audit ${audit.id}`);
+    if (row.payload_json === null) throw new OperationError("input", `Lighthouse result ${row.id} failed: ${row.error_message}`);
+    const { storedPayload, report } = readStoredLighthousePayload(row.payload_json, input.category);
+    return {
+      auditId: audit.id,
+      resultId: row.id,
+      finalUrl: storedPayload?.metadata.finalUrl ?? row.url,
+      strategy: row.strategy,
+      fetchedAt: row.fetched_at,
+      category: input.category ?? "all",
+      hasIssueDetails: report.hasIssueDetails,
+      scores: storedPayload?.scores ?? null,
+      metrics: storedPayload?.metrics ?? null,
+      issues: report.issues,
+    };
+  });
 }

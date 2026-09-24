@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 import { resolve } from "node:path";
 import { OperationError } from "./errors.js";
-import { auditIssues, auditPages, auditStatus, deleteAudit, exportAudit, listAudits, resumeAudit, runAuditWorker, startAudit } from "./audit.js";
+import { auditIssues, auditPages, auditStatus, lighthouseIssues, lighthouseResults, deleteAudit, exportAudit, listAudits, resumeAudit, runAuditWorker, startAudit } from "./audit.js";
 import { backlinksDomains, backlinksLinks, backlinksOverview, backlinksPages, domainRatings } from "./backlinks.js";
 import { domainOverview, domainPages, rankedKeywords, serpCompetitors } from "./domain.js";
 import { keywordMetrics, researchKeywords, serpResults } from "./keywords.js";
 import { localBusinesses, localCategories, localPosts, localProfile, localQuestions, localRankGrid, localReviews, localSerp } from "./local.js";
 import { languageForCall, marketForCall, marketForNewProject } from "./market.js";
 import { PAGE_FETCH_CLASSES } from "./openseo/shared/audit-fetch-class.js";
+import { LIGHTHOUSE_CATEGORIES } from "./openseo/shared/lighthouse.js";
 import { DEFAULT_AUDIT_PAGES, MIN_AUDIT_PAGES, PAID_MAX_AUDIT_PAGES } from "./openseo/shared/audit-limits.js";
 import { RESEARCH_SCOPES, type ResearchScope } from "./openseo/researchScope.js";
 import { deleteTagCommand, exportCommand, listCommand, refreshCommand, removeCommand, renameTagCommand, saveCommand, tagCommand, type SavedFilters } from "./saved.js";
@@ -69,13 +70,14 @@ const usage = `Usage:
       [--sort newest|highest_rating|lowest_rating|relevant] [--other-sources] | --task-id ID) [--project DIR]
   agenticseo local posts (BUSINESS [--near LAT,LNG [--radius KM]] [MARKET] [--depth 10-100] | --task-id ID) [--project DIR]
 BUSINESS is one of --name TEXT, --cid ID or --place-id ID; TARGET is any of --cid, --place-id or --name
-  agenticseo audit start [URL] [--max-pages 10-10000] [--allow-private] [--wait] [--project DIR]
+  agenticseo audit start [URL] [--max-pages 10-10000] [--allow-private] [--lighthouse] [--wait] [--project DIR]
   agenticseo audit status [ID] [--project DIR]
   agenticseo audit resume ID [--wait] [--project DIR]
   agenticseo audit issues [ID] [--severity critical|warning|info] [--type ISSUE_TYPE] [--limit 1-1000] [--project DIR]
   agenticseo audit pages [ID] [--fetch-class ok|blocked|rate_limited|error] [--status CODE]
       [--url-contains TEXT] [--limit 1-1000] [--project DIR]
-  agenticseo audit export [ID] [--table issues|pages] [--format csv|jsonl] [--out FILE] [--project DIR]
+  agenticseo audit lighthouse [ID] [--result RESULT_ID [--category CATEGORY]] [--project DIR]
+  agenticseo audit export [ID] [--table issues|pages|performance] [--format csv|jsonl] [--out FILE] [--project DIR]
   agenticseo audit list [--project DIR]
   agenticseo audit delete ID [--project DIR]
   agenticseo query "SELECT ..." [--project DIR]
@@ -621,6 +623,7 @@ async function run([command, ...args]: string[]): Promise<unknown> {
       const input = {
         maxPages: intOption(args, "--max-pages", MIN_AUDIT_PAGES, PAID_MAX_AUDIT_PAGES) ?? DEFAULT_AUDIT_PAGES,
         allowPrivate: flag(args, "--allow-private"),
+        lighthouse: flag(args, "--lighthouse"),
         wait: flag(args, "--wait"),
       };
       const url = args.length ? positionals(args, "start URL", 1)[0] : undefined;
@@ -655,12 +658,20 @@ async function run([command, ...args]: string[]): Promise<unknown> {
     }
     if (action === "export") {
       const input = {
-        table: enumOption(args, "--table", ["issues", "pages"] as const) ?? "issues",
+        table: enumOption(args, "--table", ["issues", "pages", "performance"] as const) ?? "issues",
         format: enumOption(args, "--format", ["csv", "jsonl"] as const) ?? "csv",
         out: option(args, "--out"),
       };
       const auditId = args.length ? positionals(args, "audit id", 1)[0] : undefined;
       return exportAudit(root, { ...input, auditId });
+    }
+    if (action === "lighthouse") {
+      const resultId = option(args, "--result");
+      const category = enumOption(args, "--category", LIGHTHOUSE_CATEGORIES);
+      const auditId = args.length ? positionals(args, "audit id", 1)[0] : undefined;
+      if (resultId) return lighthouseIssues(root, { auditId, resultId, category });
+      if (category) throw new OperationError("input", "--category needs --result");
+      return lighthouseResults(root, auditId);
     }
     if (action === "list") {
       rejectUnknown(args);

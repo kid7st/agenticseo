@@ -34,6 +34,7 @@ import {
   fetchRelevantPages,
   fetchSerpCompetitors,
 } from "./labs.js";
+import { fetchLighthouseResult } from "./lighthouse.js";
 import { fetchLiveSerp, fetchLocalSerp } from "./serp.js";
 
 export type ProviderCall = { path: string[]; costUsd: number; items: unknown };
@@ -96,6 +97,9 @@ export function createDataforseoClient(ledger: ProviderCall[]) {
     serp: {
       live: meter(ledger, fetchLiveSerp),
       local: meter(ledger, fetchLocalSerp),
+    },
+    lighthouse: {
+      live: meter(ledger, fetchLighthouseResult),
     },
     labs: {
       keywordOverview: meter(ledger, fetchKeywordOverview),
