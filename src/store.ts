@@ -49,6 +49,93 @@ const migrations = [
      fetched_at TEXT NOT NULL,
      UNIQUE (keyword, location_code, language_code)
    );`,
+  // Site audits follow OpenSEO's src/db/audit.schema.ts. Upstream keeps the crawl frontier
+  // and link targets in a per-audit Durable Object (AuditScratchpad); here they are
+  // tables deleted when the audit finalizes. worker_* and heartbeat_at record which
+  // local process owns a running audit, so an interrupted one can be resumed.
+  `CREATE TABLE audits (
+     id TEXT PRIMARY KEY,
+     start_url TEXT NOT NULL,
+     status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'failed')),
+     config TEXT NOT NULL,
+     current_phase TEXT NOT NULL CHECK (current_phase IN ('discovery', 'crawling', 'finalizing', 'completed')),
+     pages_crawled INTEGER NOT NULL DEFAULT 0,
+     pages_total INTEGER NOT NULL DEFAULT 0,
+     robots_text TEXT,
+     throttle_state TEXT,
+     error_detail TEXT,
+     worker_token TEXT,
+     worker_pid INTEGER,
+     heartbeat_at TEXT,
+     started_at TEXT NOT NULL,
+     completed_at TEXT
+   );
+   CREATE TABLE audit_pages (
+     id TEXT PRIMARY KEY,
+     audit_id TEXT NOT NULL REFERENCES audits (id) ON DELETE CASCADE,
+     url TEXT NOT NULL,
+     status_code INTEGER,
+     redirect_url TEXT,
+     title TEXT,
+     meta_description TEXT,
+     canonical_url TEXT,
+     robots_meta TEXT,
+     og_title TEXT,
+     og_description TEXT,
+     og_image TEXT,
+     h1_count INTEGER NOT NULL DEFAULT 0,
+     h2_count INTEGER NOT NULL DEFAULT 0,
+     h3_count INTEGER NOT NULL DEFAULT 0,
+     h4_count INTEGER NOT NULL DEFAULT 0,
+     h5_count INTEGER NOT NULL DEFAULT 0,
+     h6_count INTEGER NOT NULL DEFAULT 0,
+     heading_order_json TEXT,
+     word_count INTEGER NOT NULL DEFAULT 0,
+     images_total INTEGER NOT NULL DEFAULT 0,
+     images_missing_alt INTEGER NOT NULL DEFAULT 0,
+     images_json TEXT,
+     internal_link_count INTEGER NOT NULL DEFAULT 0,
+     external_link_count INTEGER NOT NULL DEFAULT 0,
+     has_structured_data INTEGER NOT NULL DEFAULT 0,
+     hreflang_tags_json TEXT,
+     is_indexable INTEGER NOT NULL DEFAULT 1,
+     x_robots_tag TEXT,
+     header_canonical_url TEXT,
+     crawl_depth INTEGER,
+     in_sitemap INTEGER NOT NULL DEFAULT 0,
+     content_hash TEXT,
+     fetch_class TEXT NOT NULL DEFAULT 'ok' CHECK (fetch_class IN ('ok', 'blocked', 'rate_limited', 'error')),
+     response_time_ms INTEGER,
+     UNIQUE (audit_id, url)
+   );
+   CREATE TABLE audit_issues (
+     id TEXT PRIMARY KEY,
+     audit_id TEXT NOT NULL REFERENCES audits (id) ON DELETE CASCADE,
+     page_id TEXT REFERENCES audit_pages (id) ON DELETE CASCADE,
+     page_url TEXT NOT NULL,
+     issue_type TEXT NOT NULL,
+     severity TEXT NOT NULL CHECK (severity IN ('critical', 'warning', 'info')),
+     details_json TEXT
+   );
+   CREATE INDEX audit_issues_audit_type_idx ON audit_issues (audit_id, issue_type);
+   CREATE INDEX audit_issues_page_id_idx ON audit_issues (page_id);
+   CREATE TABLE audit_frontier (
+     audit_id TEXT NOT NULL REFERENCES audits (id) ON DELETE CASCADE,
+     url TEXT NOT NULL,
+     depth INTEGER,
+     source TEXT NOT NULL,
+     in_sitemap INTEGER NOT NULL DEFAULT 0,
+     state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'leased', 'crawled')),
+     PRIMARY KEY (audit_id, url)
+   );
+   CREATE INDEX audit_frontier_claim_idx ON audit_frontier (audit_id, state, source);
+   CREATE TABLE audit_page_links (
+     page_id TEXT PRIMARY KEY REFERENCES audit_pages (id) ON DELETE CASCADE,
+     audit_id TEXT NOT NULL REFERENCES audits (id) ON DELETE CASCADE,
+     url TEXT NOT NULL,
+     targets_json TEXT NOT NULL
+   );
+   CREATE INDEX audit_page_links_audit_idx ON audit_page_links (audit_id);`,
 ];
 
 export const databaseFile = (directory: string) => join(directory, "agenticseo.db");

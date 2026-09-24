@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,6 +18,17 @@ export function runCli(cwd: string, args: string[], { env = {}, mock = false }: 
     env: { ...process.env, DATAFORSEO_API_KEY: "", ...env },
     encoding: "utf8",
   });
+}
+
+/** runCli without blocking the event loop, for tests that serve HTTP from the test process. */
+export async function runCliAsync(cwd: string, args: string[]) {
+  const child = spawn(process.execPath, ["--import", tsx, cli, ...args], { cwd, env: { ...process.env, DATAFORSEO_API_KEY: "" } });
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => (stdout += chunk));
+  child.stderr.on("data", (chunk) => (stderr += chunk));
+  const [status] = (await once(child, "close")) as [number | null];
+  return { status, stdout, stderr };
 }
 
 /** Runs a check inside a freshly initialized US/en project for example.com. */
