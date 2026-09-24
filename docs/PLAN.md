@@ -101,7 +101,7 @@ Full SEO capability parity with OpenSEO is the target. The initial baseline is O
   - `domain-keywords`, the app's keywords tab;
   - the Lighthouse download.
 
-  A live pass on 2026-09-24 ran every command on a fresh project against DataForSEO, Search Console and GA4 for about $1.20. It read back every mutation (context, research log, saved keywords and tags, trackers, audits, Google connections) and checked every export file. It found two exit-code defects, both fixed: `ga4 use` crashed with exit 1 when the Admin API failed, and so did a Google token request that could not reach Google (now exit 4, with a proxy hint). 41 of 42 rows are `verified`; Ahrefs Domain Rating waits for a key to check the success path.
+  A live pass on 2026-09-24 ran every command on a fresh project against DataForSEO, Search Console and GA4 for about $1.20. It read back every mutation (context, research log, saved keywords and tags, trackers, audits, Google connections) and checked every export file. It found two exit-code defects, both fixed: `ga4 use` crashed with exit 1 when the Admin API failed, and so did a Google token request that could not reach Google (now exit 4). The CLI now routes requests through `HTTPS_PROXY`/`HTTP_PROXY` from the environment (Node 24.14's `http.setGlobalProxyFromEnv`), so Google works behind a proxy without extra setup. 41 of 42 rows are `verified`; Ahrefs Domain Rating waits for a key to check the success path.
 - Exit: no required SEO row remains `not started`, `in progress` or silently skipped. The normal workflow starts with a local command, not a running OpenSEO server; a contributor can build and test it from the public repository.
 
 ## Dependencies and non-goals

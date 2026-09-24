@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
+import { once } from "node:events";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { access, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { OperationError } from "../src/errors.js";
 import { marketForCall } from "../src/market.js";
-import { runCli, withProject } from "./helpers.js";
+import { runCli, runCliAsync, withProject } from "./helpers.js";
 
 test("init canonicalizes the domain and validates the market like OpenSEO, rejecting bad input with the input exit code", async () => {
   const root = await mkdtemp(join(tmpdir(), "agenticseo-"));
@@ -152,4 +155,27 @@ test("help prints the usage and succeeds; an unknown command is an input error",
     }
     assert.equal(runCli(root, ["nope"]).status, 2);
   });
+});
+
+test("requests go through HTTPS_PROXY from the environment, as curl's do", async () => {
+  // A proxy that records each CONNECT and refuses it, so nothing leaves the machine.
+  const tunnels: string[] = [];
+  const proxy = createServer();
+  proxy.on("connect", (request, socket) => {
+    tunnels.push(String(request.url));
+    socket.end("HTTP/1.1 502 Bad Gateway\r\n\r\n");
+  });
+  proxy.listen(0, "127.0.0.1");
+  await once(proxy, "listening");
+  const { port } = proxy.address() as AddressInfo;
+  try {
+    await withProject(async (root) => {
+      const env = { DATAFORSEO_API_KEY: "TEST_KEY", HTTPS_PROXY: `http://127.0.0.1:${port}`, https_proxy: "", NO_PROXY: "", no_proxy: "", NODE_USE_ENV_PROXY: "" };
+      const result = await runCliAsync(root, ["serp", "seo audit"], env);
+      assert.equal(result.status, 4, result.stderr);
+      assert.deepEqual(tunnels, ["api.dataforseo.com:443"]);
+    });
+  } finally {
+    proxy.close();
+  }
 });

@@ -130,7 +130,7 @@ describe("Google authorization", () => {
       );
       await withFetch(
         () => { throw new TypeError("fetch failed", { cause: new Error("connect ETIMEDOUT") }); },
-        () => assert.rejects(googleAccessToken("google-sub-1", "searchConsole"), credentials("provider", /Could not reach Google \(connect ETIMEDOUT\); behind a proxy, set NODE_USE_ENV_PROXY=1/)),
+        () => assert.rejects(googleAccessToken("google-sub-1", "searchConsole"), credentials("provider", /Could not reach Google \(connect ETIMEDOUT\); behind a proxy, set HTTPS_PROXY/)),
       );
     });
   });

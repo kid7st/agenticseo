@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import http from "node:http";
 import { resolve } from "node:path";
 import { OperationError } from "./errors.js";
 import { AppError } from "./openseo/platform.js";
@@ -1176,6 +1177,10 @@ async function run([command, ...args]: string[]): Promise<unknown> {
 
   throw new OperationError("input", usage);
 }
+
+// Route fetch through HTTPS_PROXY/HTTP_PROXY (honoring NO_PROXY) when the shell sets them,
+// as curl does; Node ignores them unless asked. Needs Node 24.14, newer than @types/node 24.
+(http as typeof http & { setGlobalProxyFromEnv: () => () => void }).setGlobalProxyFromEnv();
 
 const argv = process.argv.slice(2);
 // Asking for help is not an error, before or after a subcommand: print the usage and exit 0.
