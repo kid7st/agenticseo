@@ -20,6 +20,7 @@ npm link
 cd /path/to/your-website
 agenticseo init --domain example.com --location US
 agenticseo context
+agenticseo overview
 agenticseo research "seo audit"
 agenticseo keywords "seo audit" "seo audit tool"
 agenticseo serp "seo audit"
@@ -31,6 +32,14 @@ agenticseo reports
 - `init` creates `.agenticseo/project.json` with the bare domain (`www`, scheme and path removed) and the market. The file is checked again on every read.
 - `context` validates and prints `.agenticseo/context.json`, the project's shared memory in OpenSEO's vocabulary: `sections` (`business_overview`, `current_goal`, `positioning`, `writing_preferences`), `customSections`, `competitors`, `keyPages` and a `researchLog` of dated findings, plus report templates. People and agents edit that file directly. A missing file is an empty context; an invalid one fails with the exact field. Competitor domains and page URLs are shown in canonical form, the log shows the newest 20 entries from the last 90 days, and `today` (local date) is given for new entries; a later date is rejected.
 - `reports` indexes `.agenticseo/reports/*.md`. A report's first line is its `# Title` and the text before its first section is its summary. A self-contained `.html` file with the same name is its HTML export: it must end with `</html>`, stay under 500 KB, and load nothing from other sites (no scripts, remote stylesheets, fonts or images), as OpenSEO's report viewer requires. Templates live in `.agenticseo/templates/*.md` in the same shape.
+- `overview [--refresh-backlinks]` is OpenSEO's project dashboard in one result:
+  - rank trackers: keywords improved or declined against a week ago, and how many are in the top 10;
+  - the latest audit's three worst issue types, by severity and then by affected pages;
+  - the project's backlink snapshot, flagged `stale` after a day;
+  - Search Console's last 28 days against the 28 before;
+  - GA4 organic sessions, users, engagement rate and key events against the previous period, with a daily sessions trend.
+
+  Reading costs nothing. `--refresh-backlinks` buys a whole-site DataForSEO backlinks summary (about $0.02) when the snapshot is missing, older than a day or for another domain, and reports its cost and evidence file. A connected Search Console or GA4 that fails fails the command with its usual exit code.
 - `research "SEED" [--limit 150|300|500] [--clickstream]` runs OpenSEO's keyword research for one seed: DataForSEO Labs related keywords, falling back to suggestions and then ideas until at least five non-seed keywords are found, or Google Ads keyword ideas where Labs does not cover the market. It returns the first 25 rows; a repeat within 24 hours comes from `.agenticseo/cache/` at no cost (`cached: true`).
 - `keywords TERM... [--clickstream]` returns volume, CPC, competition, keyword difficulty and intent for up to 700 terms, from Labs keyword overview or, outside Labs markets, Google Ads search volume. Terms with no metric at all are listed in `missingKeywords`.
 - `serp "QUERY" [--depth 10-100]` returns live Google results of every type (default depth 20), trimmed to type, rank, title, URL, domain and description.

@@ -229,6 +229,19 @@ const migrations = [
      posted_at TEXT NOT NULL,
      PRIMARY KEY (run_id, tracking_keyword_id, device)
    );`,
+  `CREATE TABLE backlink_snapshots (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     domain TEXT NOT NULL,
+     rank INTEGER,
+     backlinks INTEGER,
+     referring_domains INTEGER,
+     broken_backlinks INTEGER,
+     new_backlinks INTEGER,
+     lost_backlinks INTEGER,
+     new_referring_domains INTEGER,
+     lost_referring_domains INTEGER,
+     captured_at TEXT NOT NULL
+   );`,
 ];
 
 export const databaseFile = (directory: string) => join(directory, "agenticseo.db");

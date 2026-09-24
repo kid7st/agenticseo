@@ -94,6 +94,7 @@ Full SEO capability parity with OpenSEO is the target. The initial baseline is O
   - `keyword-clustering`, `competitor-analysis`, `competitive-landscape`, `link-prospecting` and `local-seo` (Little Charli) each saved a report that `agenticseo reports` accepted, stayed within the user's budget ($0.05, $0.20, $0.65, $0.19 and $0.13), and follows the template, including its closing skill link.
 
   The only CLI friction was `--help` after a subcommand exiting 2, which is fixed.
+- Dashboard (6b) is `agenticseo overview`, checked on kua.ai: the free read returned every card, and a backlink refresh cost $0.024, with a repeat on the same day making no call.
 - Exit: no required SEO row remains `not started`, `in progress` or silently skipped. The normal workflow starts with a local command, not a running OpenSEO server; a contributor can build and test it from the public repository.
 
 ## Dependencies and non-goals

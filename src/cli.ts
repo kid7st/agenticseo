@@ -40,11 +40,13 @@ import { deleteTagCommand, exportCommand, listCommand, refreshCommand, removeCom
 import { queryStore, withStore } from "./store.js";
 import { cacheDirectory, findProjectRoot, initProject, readContext, readProject, saveEvidence } from "./project.js";
 import { listReports, listTemplates } from "./reports.js";
+import { projectOverview } from "./overview.js";
 
 const usage = `Usage:
   agenticseo init --domain example.com --location US|2840 [--language en] [--project DIR]
   agenticseo context [--project DIR]
   agenticseo reports [--project DIR]
+  agenticseo overview [--refresh-backlinks] [--project DIR]
   agenticseo keywords TERM... [--clickstream] [MARKET] [--project DIR]
   agenticseo research "SEED" [--limit 150|300|500] [--clickstream] [MARKET] [--project DIR]
   agenticseo serp "QUERY" [--depth 10-100] [MARKET] [--project DIR]
@@ -300,6 +302,12 @@ async function run([command, ...args]: string[]): Promise<unknown> {
   if (command === "reports") {
     rejectUnknown(args);
     return listReports(await findProjectRoot(projectOption));
+  }
+
+  if (command === "overview") {
+    const refreshBacklinks = flag(args, "--refresh-backlinks");
+    rejectUnknown(args);
+    return projectOverview(await findProjectRoot(projectOption), { refreshBacklinks });
   }
 
   if (command === "keywords") {
