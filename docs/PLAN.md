@@ -30,7 +30,18 @@ Full SEO capability parity with OpenSEO is the target. The initial baseline is O
 
 - Extract safe crawl/discovery, per-page and cross-page checks; persist page, link, issue and run state locally. Port optional Lighthouse sampling and result export.
 - Run locally first; only introduce a remote runner if measured job duration or uptime needs justify it. The remote runner must invoke the same audit operation.
-- Exit: a representative site produces explainable, resumable audit results; robots rules, URL safety, failures and partial results are tested; issue/export output is comparable to upstream.
+- Exit: a representative site produces explainable, resumable audit results; robots rules, URL safety, failures and partial results are tested; issue/export output is comparable to upstream. **Complete** (2026-09-24, Pi): following `seo-audit` and `seo-report` on a real site, the agent:
+  - started a 200-page audit in the background and polled it while running research;
+  - read issues, pages and stored columns with `query`;
+  - saved a Chinese report with an HTML export, a research-log entry and key pages.
+
+  The crawl took 3 minutes 20 seconds and cost nothing. Paid lookups cost $0.17 before the DataForSEO balance ran out; the resulting HTTP 402 exited 4, and the report states it as a limit.
+
+  `test/audit.test.ts` covers robots rules, URL safety, 429 back-off, a killed worker resumed without re-fetching, takeover and deletion, and partial results. The engine matched badseo.dev's declared issues on 40 of 42 fixture pages; the other two fixtures are not deployed. Lighthouse was verified separately: 12 checks for $0.06.
+
+  The exercise found two gaps, both fixed. Failures did not print the provider's own response. The audit skill did not give the key-page fields, so the agent guessed `note`; the context check rejected it with the exact field.
+
+  Not ported: hosted audit capacity limits and the Lighthouse issue-file download (`query` reads the stored payload).
 
 ## Phase 4 — Ranking, scheduling and history
 

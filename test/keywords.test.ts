@@ -110,6 +110,7 @@ test("CLI discovers a project, saves full evidence, and maps failures to exit co
     const outage = runCli(nested, ["keywords", "provider outage"], { env: { DATAFORSEO_API_KEY: "TEST_KEY" }, mock: true });
     assert.equal(outage.status, 4);
     assert.match(outage.stderr, /DataForSEO HTTP 502/);
+    assert.match(outage.stderr, /Provider response: upstream unavailable/);
 
     const result = runCli(nested, ["keywords", "seo audit", "seo tool", "missing term"], { env: { DATAFORSEO_API_KEY: "TEST_KEY" }, mock: true });
     assert.equal(result.status, 0, result.stderr);

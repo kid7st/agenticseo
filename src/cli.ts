@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { resolve } from "node:path";
 import { OperationError } from "./errors.js";
+import { AppError } from "./openseo/platform.js";
 import { auditIssues, auditPages, auditStatus, lighthouseIssues, lighthouseResults, deleteAudit, exportAudit, listAudits, resumeAudit, runAuditWorker, startAudit } from "./audit.js";
 import { backlinksDomains, backlinksLinks, backlinksOverview, backlinksPages, domainRatings } from "./backlinks.js";
 import { domainOverview, domainPages, rankedKeywords, serpCompetitors } from "./domain.js";
@@ -702,6 +703,10 @@ run(process.argv.slice(2)).then(
   (error: unknown) => {
     if (error instanceof OperationError) {
       console.error(error.message);
+      // A provider's own explanation (e.g. DataForSEO's reason for an HTTP 402) is kept in
+      // the error details; without it the agent sees only the status code.
+      const responseBody = error instanceof AppError ? error.details?.responseBody : undefined;
+      if (responseBody) console.error(`Provider response: ${responseBody}`);
       process.exitCode = exitCodes[error.kind];
       return;
     }
