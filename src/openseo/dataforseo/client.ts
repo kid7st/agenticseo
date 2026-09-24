@@ -35,7 +35,7 @@ import {
   fetchSerpCompetitors,
 } from "./labs.js";
 import { fetchLighthouseResult } from "./lighthouse.js";
-import { fetchLiveSerp, fetchLocalSerp } from "./serp.js";
+import { fetchLiveSerp, fetchLocalSerp, fetchRankCheckSerp, postRankCheckTasks } from "./serp.js";
 
 export type ProviderCall = { path: string[]; costUsd: number; items: unknown };
 
@@ -97,6 +97,9 @@ export function createDataforseoClient(ledger: ProviderCall[]) {
     serp: {
       live: meter(ledger, fetchLiveSerp),
       local: meter(ledger, fetchLocalSerp),
+      rankCheck: meter(ledger, fetchRankCheckSerp),
+      // task_post is where DataForSEO charges; task_get collection is free and unmetered.
+      rankCheckTaskPost: meter(ledger, postRankCheckTasks),
     },
     lighthouse: {
       live: meter(ledger, fetchLighthouseResult),

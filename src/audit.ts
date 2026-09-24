@@ -9,7 +9,8 @@ import { toCsv, toJsonl, writeExport } from "./export.js";
 import { normalizeAndValidateStartUrl, resolveStartUrlRedirects } from "./openseo/audit/url-policy.js";
 import { AUDIT_ISSUE_TYPES, ISSUE_SEVERITY_ORDER, type AuditIssueType, type IssueSeverity } from "./openseo/shared/audit-issues.js";
 import type { PageFetchClass } from "./openseo/shared/audit-fetch-class.js";
-import { HEARTBEAT_STALE_MS, runSiteAudit, type AuditRunConfig } from "./openseo/workflows/siteAuditRunner.js";
+import { runSiteAudit, type AuditRunConfig } from "./openseo/workflows/siteAuditRunner.js";
+import { workerAlive } from "./worker.js";
 import { getRequiredEnvValue } from "./openseo/platform.js";
 import { readStoredLighthousePayload } from "./openseo/lighthousePayload.js";
 import type { LighthouseCategory } from "./openseo/shared/lighthouse.js";
@@ -33,19 +34,6 @@ type AuditRow = {
 };
 
 const logFile = async (root: string, auditId: string) => join(await dataDirectory(root), `audit-${auditId}.log`);
-
-/** A running audit's worker is gone when its heartbeat is stale or, on this machine, its process has exited. */
-function workerAlive(row: AuditRow) {
-  if (!row.heartbeat_at || Date.now() - Date.parse(row.heartbeat_at) > HEARTBEAT_STALE_MS) return false;
-  if (row.worker_pid === null) return true;
-  try {
-    process.kill(row.worker_pid, 0);
-    return true;
-  } catch (error) {
-    // EPERM means the process exists but belongs to someone else.
-    return (error as NodeJS.ErrnoException).code !== "ESRCH";
-  }
-}
 
 /** The given audit, or the latest one when no id is given (as OpenSEO's audit tools default). */
 function findAudit(db: Store, auditId?: string) {

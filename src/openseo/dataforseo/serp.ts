@@ -1,16 +1,22 @@
 // Ported from OpenSEO src/server/lib/dataforseo/serp.ts at commit
-// 0ffff93101043aad7600a3b6a499a0cd2887ef49 (live organic and local SERP subset).
-// Local change: local SERP rows are validated as records before callers read them.
+// 0ffff93101043aad7600a3b6a499a0cd2887ef49.
 // Copyright (c) 2026 Ben Senescu. MIT License; see LICENSES/OpenSEO.txt.
+// Local changes: local SERP rows are validated as records before callers read
+// them; a rejected task_post entry is not logged (the caller checks it live).
 import { z } from "zod";
-import { dataforseoPost } from "./core.js";
+import { dataforseoGet, dataforseoPost } from "./core.js";
+import { MAX_TASKS_PER_POST } from "../shared/rank-tracking.js";
 import {
   assertOk,
   buildTaskBilling,
+  isNoResultsTask,
+  isTaskInProgress,
   parseTaskItems,
   type DataforseoApiResponse,
   type DataforseoItemsTask,
+  type DataforseoTaskLike,
 } from "./envelope.js";
+import { AppError } from "../platform.js";
 
 // Default depth for keyword SERP analysis. DataForSEO crawls (and bills) one
 // Google page of 10 results at a time, and the crawls are sequential, so depth
@@ -24,6 +30,23 @@ export const SERP_ANALYSIS_DEPTH = 20;
 /** DataForSEO bills SERPs in pages of 10; depth outside 10-100 is rejected. */
 function clampSerpDepth(depth: number): number {
   return Math.min(100, Math.max(10, depth));
+}
+
+/**
+ * Stop crawling SERP pages once the target domain is found — DataForSEO only
+ * bills the pages crawled, so a page-1 ranking at depth 20 costs one page
+ * instead of two. Matching is restricted to organic results and uses
+ * with_subdomains, mirroring buildRankCheckResult exactly: without
+ * find_targets_in, a sitelink or PAA mention could stop the crawl before the
+ * domain's organic listing and record a false "not ranking".
+ */
+function stopCrawlOnTarget(targetDomain: string) {
+  return {
+    stop_crawl_on_match: [
+      { match_value: targetDomain, match_type: "with_subdomains" },
+    ],
+    find_targets_in: ["organic"],
+  };
 }
 
 // Kept as a hand-written schema: the SDK's BaseSerpApiElementItem type omits
@@ -95,6 +118,232 @@ export async function fetchLiveSerp(input: {
     ),
     billing: buildTaskBilling(task),
   };
+}
+
+export interface RankCheckResult {
+  keywordId: string;
+  keyword: string;
+  position: number | null;
+  url: string | null;
+  serpFeatures: string[];
+}
+
+function buildRankCheckResult(
+  input: { keywordId: string; keyword: string; targetDomain: string },
+  items: SerpLiveItem[],
+): RankCheckResult {
+  const target = input.targetDomain.toLowerCase();
+  const organicMatch = items.find((item) => {
+    if (item.type !== "organic" || item.domain == null) return false;
+    const domain = item.domain.toLowerCase();
+    return domain === target || domain.endsWith(`.${target}`);
+  });
+
+  return {
+    keywordId: input.keywordId,
+    keyword: input.keyword,
+    // rank_group = position among organic results only (what users count as
+    // "my ranking"). rank_absolute would also count SERP features (local
+    // pack, PAA, AI overviews) and reads as worse than what users see.
+    position: organicMatch
+      ? (organicMatch.rank_group ?? organicMatch.rank_absolute ?? null)
+      : null,
+    url: organicMatch?.url ?? null,
+    serpFeatures: [...new Set(items.map((item) => item.type).filter(Boolean))],
+  };
+}
+
+export async function fetchRankCheckSerp(input: {
+  keyword: string;
+  keywordId: string;
+  locationCode: number;
+  languageCode: string;
+  locationName?: string;
+  device: "desktop" | "mobile";
+  targetDomain: string;
+  depth: number;
+}): Promise<DataforseoApiResponse<RankCheckResult>> {
+  const depth = clampSerpDepth(input.depth);
+  const locationParams = input.locationName
+    ? { location_name: input.locationName }
+    : { location_code: input.locationCode };
+  const response = await dataforseoPost(
+    "/v3/serp/google/organic/live/advanced",
+    [
+      {
+        keyword: input.keyword,
+        ...locationParams,
+        language_code: input.languageCode,
+        device: input.device,
+        os: input.device === "desktop" ? "windows" : "android",
+        depth,
+        ...stopCrawlOnTarget(input.targetDomain),
+      },
+    ],
+  );
+
+  // "No Search Results" (40501) is valid for obscure/new keywords — treat as an
+  // empty result set rather than failing the whole rank-tracking run.
+  const task = assertOk(response, { treatNoResultsAsEmpty: true });
+  const items = parseTaskItems(
+    "google-organic-live-advanced",
+    task,
+    serpSnapshotItemSchema,
+  );
+
+  return {
+    data: buildRankCheckResult(input, items),
+    billing: buildTaskBilling(task),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Task-queue rank checks (scheduled runs). DataForSEO's standard queue costs
+// ~30% of the live endpoint; tasks complete in ~5 minutes on average. The flow
+// is task_post (charged) -> poll task_get (free) -> live fallback for
+// stragglers, orchestrated by the rank check workflow.
+// ---------------------------------------------------------------------------
+
+export interface RankCheckTaskInput {
+  keyword: string;
+  keywordId: string;
+  device: "desktop" | "mobile";
+}
+
+export interface PostedRankCheckTask extends RankCheckTaskInput {
+  taskId: string;
+}
+
+export async function postRankCheckTasks(input: {
+  tasks: RankCheckTaskInput[];
+  locationCode: number;
+  languageCode: string;
+  locationName?: string;
+  depth: number;
+  targetDomain: string;
+}): Promise<DataforseoApiResponse<PostedRankCheckTask[]>> {
+  if (input.tasks.length === 0 || input.tasks.length > MAX_TASKS_PER_POST) {
+    throw new AppError(
+      "INTERNAL_ERROR",
+      `task_post accepts 1-${MAX_TASKS_PER_POST} tasks, got ${input.tasks.length}`,
+    );
+  }
+  const depth = clampSerpDepth(input.depth);
+  const locationParams = input.locationName
+    ? { location_name: input.locationName }
+    : { location_code: input.locationCode };
+  const response = await dataforseoPost<
+    DataforseoTaskLike & { id?: string; data?: Record<string, unknown> }
+  >(
+    "/v3/serp/google/organic/task_post",
+    input.tasks.map((task) => ({
+      keyword: task.keyword,
+      ...locationParams,
+      language_code: input.languageCode,
+      device: task.device,
+      os: task.device === "desktop" ? "windows" : "android",
+      depth,
+      // Queued tasks are billed provisionally at full depth at post time;
+      // task_get later reports the reduced actual cost when the crawl
+      // stopped early. We meter customers on the post-time amount —
+      // collection-time metering is a possible future optimization.
+      ...stopCrawlOnTarget(input.targetDomain),
+      // Echoed back on the response entry and task_get; used to map a
+      // DataForSEO task id back to our keyword without relying on order.
+      tag: `${task.keywordId}:${task.device}`,
+    })),
+  );
+
+  if (!response || response.status_code !== 20000) {
+    throw new AppError(
+      "INTERNAL_ERROR",
+      response?.status_message || "DataForSEO task_post failed",
+    );
+  }
+
+  // One response entry per submitted task; accepted entries have status 20100
+  // "Task Created" and their own cost (charged at post time). Cost is summed
+  // over every entry — accepted or not — so anything DataForSEO charged is
+  // metered. Rejected entries get no posted task; the workflow falls back to
+  // the live endpoint for any keyword/device pair missing from the result.
+  const byTag = new Map(
+    input.tasks.map((task) => [`${task.keywordId}:${task.device}`, task]),
+  );
+  const posted: PostedRankCheckTask[] = [];
+  let costUsd = 0;
+  for (const entry of response.tasks ?? []) {
+    costUsd += entry.cost ?? 0;
+    const tag: unknown = entry.data?.tag;
+    const task = typeof tag === "string" ? byTag.get(tag) : undefined;
+    // A rejected entry has no posted task; the caller checks that pair live.
+    if (entry.status_code !== 20100 || !entry.id || !task) continue;
+    posted.push({ ...task, taskId: entry.id });
+  }
+
+  return {
+    data: posted,
+    billing: {
+      path: ["v3", "serp", "google", "organic", "task_post"],
+      costUsd,
+    },
+  };
+}
+
+type RankCheckTaskOutcome =
+  | { status: "pending" }
+  | { status: "failed"; message: string }
+  | { status: "completed"; result: RankCheckResult };
+
+/**
+ * Collect one queued task's result. Deliberately not metered and not wrapped
+ * in the billing envelope: collection is free (the task was charged at
+ * task_post), and the task_get response carries the task's settled cost
+ * (reduced when stop_crawl_on_match ended the crawl early) — running it
+ * through the metering seam would charge the customer twice.
+ */
+export async function fetchRankCheckTaskResult(input: {
+  taskId: string;
+  keywordId: string;
+  keyword: string;
+  targetDomain: string;
+}): Promise<RankCheckTaskOutcome> {
+  const response = await dataforseoGet(
+    `/v3/serp/google/organic/task_get/advanced/${encodeURIComponent(input.taskId)}`,
+  );
+  const task = response?.tasks?.[0];
+  if (!response || response.status_code !== 20000 || !task) {
+    throw new AppError(
+      "INTERNAL_ERROR",
+      response?.status_message || "DataForSEO task_get failed",
+    );
+  }
+
+  if (isTaskInProgress(task)) {
+    return { status: "pending" };
+  }
+
+  if (task.status_code !== 20000) {
+    // "No Search Results" is valid for obscure/new keywords — same treatment
+    // as the live path's treatNoResultsAsEmpty.
+    if (!isNoResultsTask(task)) {
+      return {
+        status: "failed",
+        message:
+          task.status_message || `DataForSEO task failed (${task.status_code})`,
+      };
+    }
+    return {
+      status: "completed",
+      result: buildRankCheckResult(input, []),
+    };
+  }
+
+  const items = parseTaskItems(
+    "google-organic-task-get-advanced",
+    task,
+    serpSnapshotItemSchema,
+  );
+  return { status: "completed", result: buildRankCheckResult(input, items) };
 }
 
 // Local SERP rows stay untyped records; callers pick fields by name.

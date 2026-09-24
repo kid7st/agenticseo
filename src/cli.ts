@@ -8,7 +8,21 @@ import { domainOverview, domainPages, rankedKeywords, serpCompetitors } from "./
 import { keywordMetrics, researchKeywords, serpResults } from "./keywords.js";
 import { localBusinesses, localCategories, localPosts, localProfile, localQuestions, localRankGrid, localReviews, localSerp } from "./local.js";
 import { countryForCall, languageForCall, marketForCall, marketForNewProject, serpMarketForCall } from "./market.js";
-import { addTrackerKeywords, createTracker, estimateTracker, listTrackers, removeTrackerKeywords, searchLocations, showTracker, updateTracker } from "./rank.js";
+import {
+  addTrackerKeywords,
+  createTracker,
+  estimateTracker,
+  listTrackers,
+  refreshTrackerMetrics,
+  removeTrackerKeywords,
+  runTracker,
+  searchLocations,
+  showTracker,
+  trackerHistory,
+  trackerMatrix,
+  trackerTrend,
+  updateTracker,
+} from "./rank.js";
 import { MAX_KEYWORDS_PER_CONFIG } from "./openseo/shared/rank-tracking.js";
 import { PAGE_FETCH_CLASSES } from "./openseo/shared/audit-fetch-class.js";
 import { LIGHTHOUSE_CATEGORIES } from "./openseo/shared/lighthouse.js";
@@ -86,11 +100,16 @@ BUSINESS is one of --name TEXT, --cid ID or --place-id ID; TARGET is any of --ci
   agenticseo rank create [DOMAIN] [MARKET] [--location-name NAME] [TRACKER_SETTINGS] [--project DIR]
   agenticseo rank update ID [--domain DOMAIN] [MARKET] [--location-name NAME|none] [TRACKER_SETTINGS] [--project DIR]
   agenticseo rank list [--project DIR]
-  agenticseo rank show ID [--project DIR]
   agenticseo rank archive ID [--project DIR]
   agenticseo rank add ID KEYWORD... [--match-case] [--project DIR]
   agenticseo rank remove ID KEYWORD_ID... [--project DIR]
   agenticseo rank estimate ID [--add N] [--project DIR]
+  agenticseo rank run ID [--keywords KEYWORD_ID,...] [--project DIR]
+  agenticseo rank show ID [--compare 1d|7d|30d|90d] [--project DIR]
+  agenticseo rank history ID KEYWORD_ID [--days 1-730] [--project DIR]
+  agenticseo rank trend ID [--device mobile|desktop] [--days 1-730] [--project DIR]
+  agenticseo rank matrix ID [--device mobile|desktop] [--runs 1-26] [--project DIR]
+  agenticseo rank metrics ID [--project DIR]
   agenticseo rank locations "PLACE" [--location COUNTRY] [--project DIR]
 TRACKER_SETTINGS: --devices mobile|desktop|both --depth 10-100 (multiple of 10) --schedule manual|daily|weekly|monthly
   agenticseo query "SELECT ..." [--project DIR]
@@ -742,10 +761,44 @@ async function run([command, ...args]: string[]): Promise<unknown> {
       rejectUnknown(args);
       return listTrackers(root);
     }
-    if (action === "show" || action === "archive") {
+    if (action === "show") {
+      const id = trackerId();
+      const compare = enumOption(args, "--compare", ["1d", "7d", "30d", "90d"] as const);
+      rejectUnknown(args);
+      return showTracker(root, id, compare);
+    }
+    if (action === "archive") {
       const id = trackerId();
       rejectUnknown(args);
-      return action === "show" ? showTracker(root, id) : updateTracker(root, id, { isActive: false });
+      return updateTracker(root, id, { isActive: false });
+    }
+    if (action === "run") {
+      const id = trackerId();
+      const keywordIds = listOption(args, "--keywords");
+      rejectUnknown(args);
+      return runTracker(root, id, keywordIds);
+    }
+    if (action === "history") {
+      const id = trackerId();
+      const sinceDays = intOption(args, "--days", 1, 730) ?? 365;
+      return trackerHistory(root, id, positionals(args, "keyword id", 1)[0], sinceDays);
+    }
+    if (action === "trend") {
+      const id = trackerId();
+      const input = { device: enumOption(args, "--device", ["mobile", "desktop"] as const), sinceDays: intOption(args, "--days", 1, 730) ?? 365 };
+      rejectUnknown(args);
+      return trackerTrend(root, id, input);
+    }
+    if (action === "matrix") {
+      const id = trackerId();
+      const input = { device: enumOption(args, "--device", ["mobile", "desktop"] as const), runLimit: intOption(args, "--runs", 1, 26) ?? 12 };
+      rejectUnknown(args);
+      return trackerMatrix(root, id, input);
+    }
+    if (action === "metrics") {
+      const id = trackerId();
+      rejectUnknown(args);
+      return refreshTrackerMetrics(root, id);
     }
     if (action === "add") {
       const id = trackerId();
