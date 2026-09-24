@@ -54,6 +54,11 @@ agenticseo reports
   - paging with `--start-row` and `nextStartRow`.
 
   `gsc report` gives totals against the previous period, striking-distance queries (best page at positions 5–20) and countries. `gsc export` writes the query or page table. `gsc inspect URL...` runs URL Inspection on up to ten URLs. Search Console is free. A revoked or expired grant exits 3 and asks you to run `google connect` again.
+- `ga4 properties` lists the Google Analytics properties your accounts can read, and `ga4 use PROPERTY_ID` records one for this project with its time zone and currency; `ga4 disconnect` removes it. `ga4 report KIND` runs one of OpenSEO's GA4 reports: `landing-pages`, `page-performance`, `key-events`, `traffic-acquisition`, `ecommerce`, `site-search` or `audience`.
+  - Reports cover Organic Search unless `--channel all`. They use the last 28 complete days in the property's time zone unless `--start`/`--end` is given, and page with `--limit`/`--offset`.
+  - `--breakdown`, `--compare` (previous period) and `--include-date` apply where the report supports them.
+  - `ga4 overview` compares organic totals with the previous period and adds a daily or weekly trend. `ga4 health` checks data streams, enhanced measurement, key events and custom definitions. `ga4 opportunities` ranks landing pages by joining Search Console demand with GA4 engagement.
+  - A metric Google restricts is `null`, never 0. Analytics is free.
 - `query "SELECT ..."` runs one read-only SQL statement against the project database and returns up to 500 rows. Tables: `saved_keywords`, `saved_keyword_tags`, `saved_keyword_tag_assignments`, `keyword_metrics` (latest metrics per keyword and market), `audits`, `audit_pages`, `audit_issues` and `audit_lighthouse_results` (`audit_frontier` and `audit_page_links` are crawl state, emptied when an audit completes), `rank_tracking_configs`, `rank_tracking_keywords`, `rank_check_runs`, `rank_snapshots` and `rank_check_tasks`; `SELECT sql FROM sqlite_schema` shows their columns.
 
 Domain commands need a market DataForSEO Labs serves. Where OpenSEO would quietly switch such a project to the United States, AgenticSEO exits 2 so you choose the market with `--location`.
