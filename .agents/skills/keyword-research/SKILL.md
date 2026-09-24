@@ -22,9 +22,9 @@ Use the installed `agenticseo` command. If it is not on PATH, tell the user how 
 
 ## Commands
 
-- `agenticseo research "SEED" [--limit 150|300|500]`: primary discovery. One seed per call; run a few distinct seeds rather than many near-duplicates. It returns the first 25 rows and saves all rows with monthly trends as evidence. A repeat within 24 hours is served from the project cache at no cost (`cached: true`).
+- `agenticseo research "SEED"... [--limit 150|300|500]`: primary discovery, 1–5 seeds per call, each researched on its own; run a few distinct seeds rather than many near-duplicates. A seed that fails is reported with `ok: false` without failing the others. It returns each seed's first rows (25 for one seed, 10 each for several) and saves all rows with monthly trends as evidence. A repeat within 24 hours is served from the project cache at no cost (`cached: true`).
 - `agenticseo keywords TERM...`: volume, difficulty, intent, CPC and competition for up to 700 known terms in one call. Use it to score a fixed candidate list. Terms with no data are listed in `missingKeywords`.
-- `agenticseo serp "QUERY" [--depth 10-100]`: live Google results for a query. Use it when intent is ambiguous or you need to see who ranks; keep checks few, since each is billed.
+- `agenticseo serp "QUERY"... [--depth 10-100]`: live Google results for 1–10 queries, each billed. Use it when intent is ambiguous or you need to see who ranks; keep checks few, since each is billed.
 - Add `--clickstream` to `research` or `keywords` only when the user wants refined volumes; it doubles the cost.
 - Add `--location COUNTRY [--language CODE]` to run one call in another country than the project's, for example to compare markets. Report which market each number comes from.
 

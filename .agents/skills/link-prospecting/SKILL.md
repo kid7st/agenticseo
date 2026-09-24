@@ -33,13 +33,13 @@ Deliver through the `seo-report` skill. If that skill is not available, say so a
 
 ## Commands
 
-- `agenticseo serp "QUERY"`: find ranking articles, listicles, resource pages, comparisons and topical publishers, one query per call.
+- `agenticseo serp "QUERY"...`: find ranking articles, listicles, resource pages, comparisons and topical publishers, up to 10 queries per call.
 - `agenticseo backlinks overview DOMAIN`: a competitor domain's or page's backlink and referring-domain profile, with its top referring domains.
 - `agenticseo backlinks domains DOMAIN` and `agenticseo backlinks links DOMAIN`: page through a competitor's referring domains and individual backlinks (`--include`, `--min-domain-rank`, `--link-type dofollow`, `--hide-lost`) when its profile is the best source of prospects.
 - `agenticseo domain DOMAIN`: qualify important prospect domains.
 - `agenticseo ranked DOMAIN`: what a prospect or competitor ranks for, when topical fit matters.
 - `agenticseo local businesses` and `agenticseo local serp`: for local link prospecting, when nearby businesses, local competitors or Maps categories can reveal partnership targets.
-- `agenticseo research "SEED"`: expand prospecting queries.
+- `agenticseo research "SEED"...`: expand prospecting queries.
 
 ## Contact discovery tools
 
@@ -72,7 +72,7 @@ Build queries from the asset or topic:
 - `<topic> software`
 - `<topic> for <audience>`
 
-Run `agenticseo serp` for the most relevant patterns, one query per call.
+Run `agenticseo serp` for the most relevant patterns, up to 10 queries per call.
 
 ## Workflow
 

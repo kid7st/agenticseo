@@ -7,6 +7,7 @@ import { research } from "./openseo/keywords/research.js";
 import type { Market } from "./market.js";
 import { upsertKeywordMetric } from "./openseo/keywords/savedKeywordsRepository.js";
 import { normalizeIntent } from "./openseo/keywords/helpers.js";
+import type { KeywordMode } from "./openseo/keywords/selection.js";
 import { transaction, type Store } from "./store.js";
 
 /** OpenSEO offers clickstream only where Labs serves the market; say so instead of ignoring the flag. */
@@ -68,18 +69,34 @@ export async function keywordMetrics(market: Market, keywords: string[], options
 }
 
 /**
- * OpenSEO's research_keywords for one seed: auto source fallback, cached for 24 hours in
- * the project, with every researched keyword's metrics stored for saved keywords.
+ * Runs each item of a bulk call on its own, as OpenSEO's bulk MCP tools do: an item's
+ * failure is reported in its result instead of failing the batch. A rejected key stops the
+ * batch (every other item would fail the same way), a local bug is rethrown, and a batch in
+ * which every item failed fails with the first error.
+ */
+export async function eachItem<T, R>(items: T[], work: (item: T) => Promise<R>) {
+  const settled = await Promise.allSettled(items.map(work));
+  const errors = settled.flatMap((entry) => (entry.status === "rejected" ? [entry.reason as unknown] : []));
+  const fatal = errors.find((error) => !(error instanceof OperationError) || error.kind === "credentials");
+  if (fatal !== undefined) throw fatal;
+  if (errors.length === items.length) throw errors[0];
+  return settled.map((entry) => (entry.status === "fulfilled" ? { ok: true as const, value: entry.value } : { ok: false as const, error: (entry.reason as Error).message }));
+}
+
+/**
+ * OpenSEO's keyword research for one seed: auto source fallback (or the app's fixed source
+ * with `mode`), cached for 24 hours in the project, with every researched keyword's metrics
+ * stored for saved keywords.
  */
 export async function researchKeywords(
   market: Market,
   seed: string,
-  options: { resultLimit: 150 | 300 | 500; clickstream: boolean; cacheDirectory: string; db: Store },
+  options: { resultLimit: 150 | 300 | 500; clickstream: boolean; mode?: KeywordMode; cacheDirectory: string; db: Store },
 ) {
   assertClickstreamAvailable(market, options.clickstream);
   const calls: ProviderCall[] = [];
   const result = await research(
-    { keywords: [seed], locationCode: market.locationCode, languageCode: market.languageCode, resultLimit: options.resultLimit, mode: "auto", clickstream: options.clickstream },
+    { keywords: [seed], locationCode: market.locationCode, languageCode: market.languageCode, resultLimit: options.resultLimit, mode: options.mode ?? "auto", clickstream: options.clickstream },
     { client: createDataforseoClient(calls), cache: createFileCache(options.cacheDirectory), db: options.db },
   );
   // A cache hit makes no provider call, so nothing was spent.

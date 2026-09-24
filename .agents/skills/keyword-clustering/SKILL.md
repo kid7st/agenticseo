@@ -34,11 +34,11 @@ Deliver through the `seo-report` skill. If that skill is not available, say so a
 ## Commands
 
 - `agenticseo saved list [--tags TAG,...]`: fetch an existing keyword set, optionally filtered by tags, with its latest metrics.
-- `agenticseo research "SEED"`: expand a seed when the user starts from a topic.
+- `agenticseo research "SEED"...`: expand a seed when the user starts from a topic.
 - `agenticseo ranked DOMAIN`: exact ranking keywords and URLs when the user starts from a domain or page.
 - `agenticseo gsc performance --dimensions query,page`: when Search Console is connected, real queries mapped to the pages already earning impressions, and cannibalization (one query splitting impressions across several URLs). Free; it exits 2 when not connected.
 - `agenticseo keywords TERM...`: volume, difficulty and intent for the final candidates.
-- `agenticseo serp "QUERY"`: validate whether keywords belong on the same page by checking SERP overlap and intent, one query per call.
+- `agenticseo serp "QUERY"...`: validate whether keywords belong on the same page by checking SERP overlap and intent, up to 10 queries per call.
 - `agenticseo local serp "QUERY" --near LAT,LNG`: for local SEO clusters, when Maps or local-pack intent should affect page mapping.
 - `agenticseo saved add KEYWORD... --tags TAG,...`: optionally tag the final clusters after the user confirms.
 

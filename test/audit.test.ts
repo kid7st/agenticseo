@@ -5,7 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
-import { auditStatus, exportAudit, lighthouseIssues, lighthouseResults } from "../src/audit.js";
+import { auditStatus, exportAudit, exportLighthouse, lighthouseIssues, lighthouseResults } from "../src/audit.js";
 import { OwnershipLost, runSiteAudit } from "../src/openseo/workflows/siteAuditRunner.js";
 import { withStore } from "../src/store.js";
 import { runCliAsync, withFetch, withProject } from "./helpers.js";
@@ -281,6 +281,20 @@ describe("site audit", () => {
       const lines = (await readFile(exported.file, "utf8")).trimEnd().split("\n");
       assert.equal(lines[0], '"URL","Device","Performance","Accessibility","SEO","LCP (ms)","CLS","INP (ms)","TTFB (ms)"');
       assert.equal(lines.length, 9);
+
+      // OpenSEO's Lighthouse downloads: a category's issues, all issues, or the full stored payload.
+      const byCategory = await exportLighthouse(root, { auditId: "lh", resultId: home.resultId, category: "performance", full: false });
+      assert.match(byCategory.file, /lighthouse-mobile-.*-performance-issues-.*\.json$/);
+      const categoryFile = JSON.parse(await readFile(byCategory.file, "utf8")) as { resultId: string; category: string; issues: unknown[] };
+      assert.deepEqual([categoryFile.resultId, categoryFile.category, categoryFile.issues.length], [home.resultId, "performance", 4]);
+      const all = JSON.parse(await readFile((await exportLighthouse(root, { auditId: "lh", resultId: home.resultId, full: false })).file, "utf8")) as { category: string; issues: unknown[] };
+      assert.equal(all.category, "all");
+      assert.ok(all.issues.length >= 4);
+      const full = JSON.parse(await readFile((await exportLighthouse(root, { auditId: "lh", resultId: home.resultId, full: true })).file, "utf8")) as { scores: unknown };
+      assert.deepEqual(full.scores, (await lighthouseIssues(root, { auditId: "lh", resultId: home.resultId })).scores, "the full export is the stored payload");
+      await assert.rejects(exportLighthouse(root, { auditId: "lh", resultId: home.resultId, category: "seo", full: true }), /drop --category/);
+      const failed = results.results.find((row) => row.error);
+      await assert.rejects(exportLighthouse(root, { auditId: "lh", resultId: failed?.resultId ?? "", full: true }), /failed: /);
     });
   });
 

@@ -5,7 +5,9 @@ import { createFileCache } from "./openseo/cache.js";
 import { createDataforseoClient, ledgerCost, type ProviderCall } from "./openseo/dataforseo/client.js";
 import { buildRankedKeywordsScopeFilter } from "./openseo/dataforseo/researchScopeFilters.js";
 import { getOverview } from "./openseo/domain/DomainService.js";
-import { getPagesPage, type DomainKeywordsFilters, type DomainPagesSortMode, type DomainPagesSortOrder } from "./openseo/domain/domainPagesPage.js";
+import type { DomainKeywordsFilters, DomainKeywordsSortMode, DomainKeywordsSortOrder } from "./openseo/domain/domainKeywordFilters.js";
+import { getKeywordsPage } from "./openseo/domain/domainKeywordsPage.js";
+import { getPagesPage, type DomainPagesSortMode, type DomainPagesSortOrder } from "./openseo/domain/domainPagesPage.js";
 import { mapKeywordItem } from "./openseo/domain/domainKeywordMapper.js";
 import { parseResearchTargetOrThrow } from "./openseo/domainUtils.js";
 import { assertLabsLocationCode } from "./openseo/market.js";
@@ -130,6 +132,31 @@ export async function serpCompetitors(
     etv: item.etv ?? null,
   }));
   return { rows, costUsd: ledgerCost(calls), calls };
+}
+
+/** OpenSEO's domain keywords view: a domain's ranking keywords with the app's filters, cached for 12 hours. */
+export async function domainKeywords(
+  market: Market,
+  input: {
+    target: string;
+    scope?: ResearchScope;
+    sortMode: DomainKeywordsSortMode;
+    sortOrder: DomainKeywordsSortOrder;
+    page: number;
+    pageSize: 50 | 100 | 200;
+    filters: DomainKeywordsFilters;
+    search?: string;
+    cacheDirectory: string;
+  },
+) {
+  assertDomainMarket(market);
+  const calls: ProviderCall[] = [];
+  const { cacheDirectory, target, ...view } = input;
+  const result = await getKeywordsPage(
+    { domain: target, ...view, locationCode: market.locationCode, languageCode: market.languageCode },
+    { client: createDataforseoClient(calls), cache: createFileCache(cacheDirectory) },
+  );
+  return { ...result, cached: calls.length === 0, costUsd: ledgerCost(calls), calls };
 }
 
 /** OpenSEO's domain pages view: a domain's pages by organic traffic or keyword count, cached for 12 hours. */

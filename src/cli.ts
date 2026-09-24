@@ -8,10 +8,10 @@ import { analyticsHealth, analyticsOverview, analyticsProperties, analyticsRepor
 import { connectGoogle, disconnectGoogle, listGoogleAccounts, type GoogleProduct } from "./google.js";
 import { disconnectSearchConsole, exportSearchConsole, searchConsoleInspect, searchConsolePerformance, searchConsoleReport, searchConsoleSites, useSearchConsoleSite } from "./gsc.js";
 import { GSC_DATE_RANGES, GSC_DIMENSIONS, GSC_FILTER_OPERATORS, GSC_MAX_ROW_LIMIT, GSC_SEARCH_TYPES, type GscDimension } from "./openseo/gsc/searchAnalytics.js";
-import { auditIssues, auditPages, auditStatus, lighthouseIssues, lighthouseResults, deleteAudit, exportAudit, listAudits, resumeAudit, runAuditWorker, startAudit } from "./audit.js";
+import { auditIssues, auditPages, auditStatus, lighthouseIssues, lighthouseResults, deleteAudit, exportAudit, exportLighthouse, listAudits, resumeAudit, runAuditWorker, startAudit } from "./audit.js";
 import { backlinksDomains, backlinksLinks, backlinksOverview, backlinksPages, domainRatings } from "./backlinks.js";
-import { domainOverview, domainPages, rankedKeywords, serpCompetitors } from "./domain.js";
-import { keywordMetrics, researchKeywords, serpResults } from "./keywords.js";
+import { domainKeywords, domainOverview, domainPages, rankedKeywords, serpCompetitors } from "./domain.js";
+import { eachItem, keywordMetrics, researchKeywords, serpResults } from "./keywords.js";
 import { localBusinesses, localCategories, localPosts, localProfile, localQuestions, localRankGrid, localReviews, localSerp } from "./local.js";
 import { countryForCall, languageForCall, marketForCall, marketForNewProject, serpMarketForCall } from "./market.js";
 import {
@@ -48,12 +48,16 @@ const usage = `Usage:
   agenticseo reports [--project DIR]
   agenticseo overview [--refresh-backlinks] [--project DIR]
   agenticseo keywords TERM... [--clickstream] [MARKET] [--project DIR]
-  agenticseo research "SEED" [--limit 150|300|500] [--clickstream] [MARKET] [--project DIR]
-  agenticseo serp "QUERY" [--depth 10-100] [MARKET] [--project DIR]
+  agenticseo research "SEED"... [--limit 150|300|500] [--mode auto|related|suggestions|ideas] [--clickstream] [MARKET] [--project DIR]
+  agenticseo serp "QUERY"... [--depth 10-100] [MARKET] [--project DIR]
   agenticseo domain TARGET [--scope SCOPE] [MARKET] [--project DIR]
   agenticseo ranked TARGET [--scope SCOPE] [--sort rank|search_volume|traffic_estimate|cpc]
       [--min-volume N] [--max-rank N] [--exclude TERM,...] [--types TYPE,...]
       [--limit 1-100] [--offset 0-1000] [MARKET] [--project DIR]
+  agenticseo domain-keywords TARGET [--scope SCOPE] [--sort traffic|volume|rank|score|cpc] [--order desc|asc]
+      [--search TEXT] [--include TERM,...] [--exclude TERM,...] [--min-traffic N] [--max-traffic N]
+      [--min-volume N] [--max-volume N] [--min-cpc N] [--max-cpc N] [--min-difficulty N] [--max-difficulty N]
+      [--min-rank N] [--max-rank N] [--page N] [--page-size 50|100|200] [MARKET] [--project DIR]
   agenticseo pages TARGET [--scope SCOPE] [--sort traffic|keywords] [--order desc|asc]
       [--include TERM,...] [--exclude TERM,...] [--min-traffic N] [--max-traffic N]
       [--min-keywords N] [--max-keywords N] [--page N] [--page-size 50|100|200] [MARKET] [--project DIR]
@@ -105,6 +109,7 @@ BUSINESS is one of --name TEXT, --cid ID or --place-id ID; TARGET is any of --ci
       [--url-contains TEXT] [--limit 1-1000] [--project DIR]
   agenticseo audit lighthouse [ID] [--result RESULT_ID [--category CATEGORY]] [--project DIR]
   agenticseo audit export [ID] [--table issues|pages|performance] [--format csv|jsonl] [--out FILE] [--project DIR]
+  agenticseo audit export [ID] --table lighthouse --result RESULT_ID [--category CATEGORY | --full] [--out FILE] [--project DIR]
   agenticseo audit list [--project DIR]
   agenticseo audit delete ID [--project DIR]
   agenticseo rank create [DOMAIN] [MARKET] [--location-name NAME] [TRACKER_SETTINGS] [--project DIR]
@@ -264,12 +269,17 @@ function flag(args: string[], name: string) {
   return index >= 0;
 }
 
-/** Research and SERP commands take exactly one quoted phrase. */
+/** Commands on one target or phrase take exactly one, quoted if it has spaces. */
 function singlePhrase(args: string[], what: string) {
   if (args.length !== 1 || args[0].startsWith("--") || !args[0].trim()) {
     throw new OperationError("input", `Provide exactly one ${what}; quote it if it has spaces\n${usage}`);
   }
   return args[0].trim();
+}
+
+/** What a bulk call spent: the items that succeeded report their cost; a charged failure names it in its error. */
+function sumCost(results: Array<{ ok: true; value: { costUsd: number } } | { ok: false }>) {
+  return Math.round(results.reduce((sum, result) => sum + (result.ok ? result.value.costUsd : 0), 0) * 1e6) / 1e6;
 }
 
 function rejectUnknown(args: string[]) {
@@ -339,24 +349,32 @@ async function run([command, ...args]: string[]): Promise<unknown> {
     const limit = Number(option(args, "--limit") ?? 150);
     if (limit !== 150 && limit !== 300 && limit !== 500) throw new OperationError("input", "--limit must be 150, 300 or 500");
     const clickstream = flag(args, "--clickstream");
+    const mode = enumOption(args, "--mode", ["auto", "related", "suggestions", "ideas"] as const) ?? "auto";
     const { root, project, market } = await paidCallScope();
-    const seed = singlePhrase(args, "seed keyword");
+    const seeds = positionals(args, "seed keywords (quote each one)", 5);
     const fetchedAt = new Date().toISOString();
     const cache = await cacheDirectory(root);
-    const result = await withStore(root, (db) => researchKeywords(market, seed, { resultLimit: limit, clickstream, cacheDirectory: cache, db }));
-    const evidence = await saveEvidence(root, fetchedAt, { provider: "DataForSEO", fetchedAt, project, market, seed, resultLimit: limit, clickstream, ...result });
+    const results = await withStore(root, (db) => eachItem(seeds, (seed) => researchKeywords(market, seed, { resultLimit: limit, clickstream, mode, cacheDirectory: cache, db })));
+    const evidence = await saveEvidence(root, fetchedAt, {
+      provider: "DataForSEO", fetchedAt, project, market, resultLimit: limit, clickstream, mode,
+      results: results.map((result, index) => ({ seed: seeds[index], ...result })),
+    });
+    // One seed shows its first 25 rows; a batch shows 10 per seed. The rest and all monthly trends are in the evidence.
+    const shown = seeds.length === 1 ? 25 : 10;
     return {
       provider: "DataForSEO",
-      source: result.source,
-      usedFallback: result.usedFallback,
-      cached: result.cached,
       fetchedAt,
       market,
-      seed,
-      totalRows: result.rows.length,
-      // The first rows in provider order; the rest and all monthly trends are in the evidence.
-      rows: result.rows.slice(0, 25).map(({ trend: _trend, ...row }) => row),
-      costUsd: result.costUsd,
+      mode,
+      results: results.map((result, index) =>
+        result.ok
+          ? {
+              seed: seeds[index], ok: true, source: result.value.source, usedFallback: result.value.usedFallback, cached: result.value.cached,
+              totalRows: result.value.rows.length, rows: result.value.rows.slice(0, shown).map(({ trend: _trend, ...row }) => row),
+            }
+          : { seed: seeds[index], ok: false, error: result.error },
+      ),
+      costUsd: sumCost(results),
       evidence,
     };
   }
@@ -367,11 +385,31 @@ async function run([command, ...args]: string[]): Promise<unknown> {
       throw new OperationError("input", "--depth must be a multiple of 10 from 10 to 100");
     }
     const { root, project, market } = await paidCallScope();
-    const query = singlePhrase(args, "search query");
+    const queries = positionals(args, "search queries (quote each one)", 10);
     const fetchedAt = new Date().toISOString();
-    const result = await serpResults(market, query, depth);
-    const evidence = await saveEvidence(root, fetchedAt, { provider: "DataForSEO", fetchedAt, project, market, query, depth, ...result });
-    return { provider: "DataForSEO", fetchedAt, market, query, depth, totalItems: result.items.length, items: result.items, costUsd: result.costUsd, evidence };
+    const results = await eachItem(queries, (query) => serpResults(market, query, depth));
+    const evidence = await saveEvidence(root, fetchedAt, {
+      provider: "DataForSEO", fetchedAt, project, market, depth,
+      results: results.map((result, index) => ({ query: queries[index], ...result })),
+    });
+    // A batch shows each query's first 10 rows without descriptions; everything is in the evidence.
+    const single = queries.length === 1;
+    return {
+      provider: "DataForSEO",
+      fetchedAt,
+      market,
+      depth,
+      results: results.map((result, index) =>
+        result.ok
+          ? {
+              query: queries[index], ok: true, totalItems: result.value.items.length,
+              items: single ? result.value.items : result.value.items.slice(0, 10).map(({ description: _description, ...item }) => item),
+            }
+          : { query: queries[index], ok: false, error: result.error },
+      ),
+      costUsd: sumCost(results),
+      evidence,
+    };
   }
 
   if (command === "domain") {
@@ -403,6 +441,41 @@ async function run([command, ...args]: string[]): Promise<unknown> {
     const evidence = await saveEvidence(root, fetchedAt, { provider: "DataForSEO", fetchedAt, project, market, request: { target, ...input }, ...result });
     const { calls: _calls, ...summary } = result;
     return { provider: "DataForSEO", fetchedAt, market, ...summary, evidence };
+  }
+
+  if (command === "domain-keywords") {
+    const pageSize = Number(option(args, "--page-size") ?? 100);
+    if (pageSize !== 50 && pageSize !== 100 && pageSize !== 200) throw new OperationError("input", "--page-size must be 50, 100 or 200");
+    const count = (name: string) => intOption(args, name, 0, Number.MAX_SAFE_INTEGER);
+    const input = {
+      scope: enumOption<ResearchScope>(args, "--scope", RESEARCH_SCOPES),
+      // "score" is OpenSEO's name for keyword difficulty.
+      sortMode: enumOption(args, "--sort", ["traffic", "volume", "rank", "score", "cpc"] as const) ?? "traffic",
+      sortOrder: enumOption(args, "--order", ["desc", "asc"] as const) ?? "desc",
+      page: intOption(args, "--page", 1, 1000) ?? 1,
+      pageSize: pageSize as 50 | 100 | 200,
+      search: option(args, "--search"),
+      filters: {
+        include: option(args, "--include"),
+        exclude: option(args, "--exclude"),
+        minTraffic: count("--min-traffic"),
+        maxTraffic: count("--max-traffic"),
+        minVol: count("--min-volume"),
+        maxVol: count("--max-volume"),
+        minCpc: numberOption(args, "--min-cpc"),
+        maxCpc: numberOption(args, "--max-cpc"),
+        minKd: intOption(args, "--min-difficulty", 0, 100),
+        maxKd: intOption(args, "--max-difficulty", 0, 100),
+        minRank: intOption(args, "--min-rank", 1, 100),
+        maxRank: intOption(args, "--max-rank", 1, 100),
+      },
+    };
+    const { root, project, market } = await paidCallScope();
+    const target = singlePhrase(args, "domain or URL");
+    const result = await domainKeywords(market, { target, ...input, cacheDirectory: await cacheDirectory(root) });
+    const evidence = await saveEvidence(root, new Date().toISOString(), { provider: "DataForSEO", project, market, request: { target, ...input }, ...result });
+    const { calls: _calls, ...summary } = result;
+    return { provider: "DataForSEO", market, ...summary, evidence };
   }
 
   if (command === "pages") {
@@ -749,13 +822,18 @@ async function run([command, ...args]: string[]): Promise<unknown> {
       return auditPages(root, { ...input, auditId });
     }
     if (action === "export") {
-      const input = {
-        table: enumOption(args, "--table", ["issues", "pages", "performance"] as const) ?? "issues",
-        format: enumOption(args, "--format", ["csv", "jsonl"] as const) ?? "csv",
-        out: option(args, "--out"),
-      };
+      const table = enumOption(args, "--table", ["issues", "pages", "performance", "lighthouse"] as const) ?? "issues";
+      const out = option(args, "--out");
+      if (table === "lighthouse") {
+        const resultId = option(args, "--result");
+        if (!resultId) throw new OperationError("input", "--table lighthouse needs --result ID (from agenticseo audit lighthouse)");
+        const input = { resultId, category: enumOption(args, "--category", LIGHTHOUSE_CATEGORIES), full: flag(args, "--full"), out };
+        const auditId = args.length ? positionals(args, "audit id", 1)[0] : undefined;
+        return exportLighthouse(root, { ...input, auditId });
+      }
+      const format = enumOption(args, "--format", ["csv", "jsonl"] as const) ?? "csv";
       const auditId = args.length ? positionals(args, "audit id", 1)[0] : undefined;
-      return exportAudit(root, { ...input, auditId });
+      return exportAudit(root, { table, format, out, auditId });
     }
     if (action === "lighthouse") {
       const resultId = option(args, "--result");

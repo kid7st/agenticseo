@@ -12,7 +12,7 @@ import type { PageFetchClass } from "./openseo/shared/audit-fetch-class.js";
 import { runSiteAudit, type AuditRunConfig } from "./openseo/workflows/siteAuditRunner.js";
 import { workerAlive } from "./worker.js";
 import { getRequiredEnvValue } from "./openseo/platform.js";
-import { readStoredLighthousePayload } from "./openseo/lighthousePayload.js";
+import { buildLighthouseExportFile, readStoredLighthousePayload } from "./openseo/lighthousePayload.js";
 import type { LighthouseCategory } from "./openseo/shared/lighthouse.js";
 import { dataDirectory, readProject } from "./project.js";
 import { transaction, withStore, type Store } from "./store.js";
@@ -347,6 +347,27 @@ export async function exportAudit(root: string, input: { auditId?: string; table
   return { auditId, table: input.table, file, format: input.format, rowCount };
 }
 
+/**
+ * OpenSEO's Lighthouse download (exportAuditLighthouseIssues): one check's issues, optionally
+ * one category's, or its full stored payload, as the JSON file the app hands out.
+ */
+export async function exportLighthouse(root: string, input: { auditId?: string; resultId: string; category?: LighthouseCategory; full: boolean; out?: string }) {
+  if (input.full && input.category) throw new OperationError("input", "--full exports the whole payload; drop --category");
+  const { audit, row } = await withStore(root, (db) => findLighthouse(db, input));
+  const exported = buildLighthouseExportFile({
+    idField: "resultId",
+    idValue: row.id,
+    finalUrl: row.url,
+    strategy: row.strategy,
+    createdAt: row.fetched_at,
+    payloadJson: row.payload_json,
+    mode: input.full ? "full" : input.category ? "category" : "issues",
+    category: input.category,
+  });
+  const file = await writeExport(root, { name: exported.filename.replace(/\.json$/, ""), format: "json", content: exported.content, out: input.out });
+  return { auditId: audit.id, resultId: row.id, table: "lighthouse", file, content: input.full ? "payload" : `${input.category ?? "all"} issues` };
+}
+
 type LighthouseRow = {
   id: string;
   url: string;
@@ -398,13 +419,19 @@ export async function lighthouseResults(root: string, auditId?: string) {
   });
 }
 
+/** One stored Lighthouse check that has a payload. */
+function findLighthouse(db: Store, input: { auditId?: string; resultId: string }) {
+  const audit = findAudit(db, input.auditId);
+  const row = selectLighthouse(db, audit.id).find((candidate) => candidate.id === input.resultId);
+  if (!row) throw new OperationError("input", `No Lighthouse result ${input.resultId} in audit ${audit.id}`);
+  if (row.payload_json === null) throw new OperationError("input", `Lighthouse result ${row.id} failed: ${row.error_message}`);
+  return { audit, row: { ...row, payload_json: row.payload_json } };
+}
+
 /** One Lighthouse check's issues, largest savings first (OpenSEO's getAuditLighthouseIssues). */
 export async function lighthouseIssues(root: string, input: { auditId?: string; resultId: string; category?: LighthouseCategory }) {
   return withStore(root, (db) => {
-    const audit = findAudit(db, input.auditId);
-    const row = selectLighthouse(db, audit.id).find((candidate) => candidate.id === input.resultId);
-    if (!row) throw new OperationError("input", `No Lighthouse result ${input.resultId} in audit ${audit.id}`);
-    if (row.payload_json === null) throw new OperationError("input", `Lighthouse result ${row.id} failed: ${row.error_message}`);
+    const { audit, row } = findLighthouse(db, input);
     const { storedPayload, report } = readStoredLighthousePayload(row.payload_json, input.category);
     return {
       auditId: audit.id,
