@@ -57,3 +57,11 @@ export function marketForCall(project: Market, overrides: { location?: string; l
   assertLanguageForLocation(market.locationCode, market.languageCode);
   return market;
 }
+
+/**
+ * The language for a coordinate-based call (local SEO). OpenSEO checks only that the
+ * code is supported there: the coordinate, not the project's country, sets the place.
+ */
+export function languageForCall(project: Market, language: string | undefined) {
+  return language ? parseLanguage(language) : project.languageCode;
+}

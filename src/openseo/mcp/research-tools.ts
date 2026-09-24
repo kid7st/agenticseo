@@ -1,12 +1,14 @@
 // Ported from OpenSEO src/server/mcp/tools/dataforseo-research-tools.ts at commit
 // 0ffff93101043aad7600a3b6a499a0cd2887ef49 (argument schemas, sorting and filter helpers
-// of get_ranked_keywords and find_serp_competitors).
+// of get_ranked_keywords, find_serp_competitors and the local business, local SERP
+// and Q&A tools).
 // Copyright (c) 2026 Ben Senescu. MIT License; see LICENSES/OpenSEO.txt.
 // Local changes: Array.prototype.toSorted replaces remeda's sort, and the sort
 // argument types are named here instead of derived from the MCP input schemas.
 import { z } from "zod";
 import { assertFilterConditionBudget } from "../dataforseo/filters.js";
 import type { ScopeFilter } from "../dataforseo/researchScopeFilters.js";
+import { formatCoordinate, pickRowFields, readPath } from "./local-seo-shared.js";
 
 export type RankedSortBy = "rank" | "search_volume" | "traffic_estimate" | "cpc";
 export type CompetitorSortBy = "visibility" | "traffic_estimate" | "avg_position" | "keyword_count";
@@ -137,3 +139,161 @@ export function hostMatchesDomain(host: string, domain: string): boolean {
     normalizedHost.endsWith(`.${normalizedDomain}`)
   );
 }
+
+export const nearSchema = z
+  .object({
+    latitude: z
+      .number()
+      .min(-90)
+      .max(90)
+      .describe("Latitude of the search center."),
+    longitude: z
+      .number()
+      .min(-180)
+      .max(180)
+      .describe("Longitude of the search center."),
+    radiusKm: z
+      .number()
+      .min(1)
+      .max(100000)
+      .describe(
+        "Search radius around the center, in whole kilometers (fractions are rounded).",
+      ),
+  })
+  .describe("Coordinate and radius to search around.");
+
+export function formatBusinessLocationCoordinate(near: z.infer<typeof nearSchema>) {
+  // Business Listings rejects fractional radii ("Invalid Field:
+  // 'location_coordinate'"), unlike the meter-based business_data radius.
+  const radiusKm = Math.max(1, Math.round(near.radiusKm));
+  return `${formatCoordinate(near.latitude)},${formatCoordinate(near.longitude)},${radiusKm}`;
+}
+
+export function buildLocalBusinessFilters(args: {
+  minRating?: number;
+  minReviews?: number;
+}) {
+  const filters: unknown[] = [];
+  if (args.minRating != null) {
+    pushAnd(filters, ["rating.value", ">=", args.minRating]);
+  }
+  if (args.minReviews != null) {
+    pushAnd(filters, ["rating.votes_count", ">=", args.minReviews]);
+  }
+  return filters.length > 0 ? filters : undefined;
+}
+
+export function localBusinessOrderBy(
+  sortBy: "relevance" | "rating" | "reviews" | undefined,
+): string[] | undefined {
+  switch (sortBy) {
+    case "rating":
+      return ["rating.value,desc"];
+    case "reviews":
+      return ["rating.votes_count,desc"];
+    default:
+      return undefined;
+  }
+}
+
+// Full Business Listings rows are ~9KB each (popular_times for every day,
+// attribute trees, photo URLs) — 10 of them overflow MCP clients' tool-result
+// budgets. Return only the fields a candidate list needs; get_business_profile
+// serves the full shape for one business.
+export const LOCAL_BUSINESS_ROW_FIELDS = [
+  "title",
+  "description",
+  "category",
+  "additional_categories",
+  "address",
+  "phone",
+  "url",
+  "domain",
+  "rating",
+  "is_claimed",
+  "cid",
+  "place_id",
+  "latitude",
+  "longitude",
+  "total_photos",
+  "check_url",
+] as const;
+
+// Maps SERP rows likewise ship image CDN URLs, feature ids, and contributor
+// links no consumer reads; keep identity, rank, rating, categories, and hours.
+export const LOCAL_SERP_ROW_FIELDS = [
+  "rank_group",
+  "rank_absolute",
+  "title",
+  "domain",
+  "url",
+  "contact_url",
+  "address",
+  "address_info",
+  "phone",
+  "category",
+  "additional_categories",
+  "rating",
+  "rating_distribution",
+  "price_level",
+  "is_claimed",
+  "cid",
+  "place_id",
+  "latitude",
+  "longitude",
+  "total_photos",
+  "work_hours",
+  "local_justifications",
+] as const;
+
+// Q&A rows carry a ~300-char uule URL plus avatar/contributor links on every
+// question AND every nested answer; keep the text, author, and timing.
+const BUSINESS_QUESTION_ROW_FIELDS = [
+  "rank_absolute",
+  "question_id",
+  "question_text",
+  "original_question_text",
+  "profile_name",
+  "time_ago",
+  "timestamp",
+] as const;
+
+const BUSINESS_ANSWER_ROW_FIELDS = [
+  "answer_id",
+  "answer_text",
+  "original_answer_text",
+  "profile_name",
+  "time_ago",
+  "timestamp",
+] as const;
+
+export function trimBusinessQuestionRow(row: unknown): Record<string, unknown> {
+  const trimmed = pickRowFields(row, BUSINESS_QUESTION_ROW_FIELDS);
+  const answers = readPath(row, "items");
+  trimmed.items = Array.isArray(answers)
+    ? answers.map((answer) => pickRowFields(answer, BUSINESS_ANSWER_ROW_FIELDS))
+    : null;
+  return trimmed;
+}
+
+export const localSerpNearSchema = z
+  .object({
+    latitude: z
+      .number()
+      .min(-90)
+      .max(90)
+      .describe("Latitude the SERP is fetched from."),
+    longitude: z
+      .number()
+      .min(-180)
+      .max(180)
+      .describe("Longitude the SERP is fetched from."),
+    zoom: z
+      .number()
+      .int()
+      .min(4)
+      .max(18)
+      .optional()
+      .describe("Map zoom level (4-18). Higher zoom narrows the local area."),
+  })
+  .describe("Coordinate (and optional map zoom) the SERP is fetched from.");
