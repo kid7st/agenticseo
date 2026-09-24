@@ -2,7 +2,11 @@
 import { resolve } from "node:path";
 import { OperationError } from "./errors.js";
 import { AppError } from "./openseo/platform.js";
+import { spawn } from "node:child_process";
 import { brandLookup, promptLookup } from "./ai.js";
+import { connectGoogle, disconnectGoogle, listGoogleAccounts, type GoogleProduct } from "./google.js";
+import { disconnectSearchConsole, exportSearchConsole, searchConsoleInspect, searchConsolePerformance, searchConsoleReport, searchConsoleSites, useSearchConsoleSite } from "./gsc.js";
+import { GSC_DATE_RANGES, GSC_DIMENSIONS, GSC_FILTER_OPERATORS, GSC_MAX_ROW_LIMIT, GSC_SEARCH_TYPES, type GscDimension } from "./openseo/gsc/searchAnalytics.js";
 import { auditIssues, auditPages, auditStatus, lighthouseIssues, lighthouseResults, deleteAudit, exportAudit, listAudits, resumeAudit, runAuditWorker, startAudit } from "./audit.js";
 import { backlinksDomains, backlinksLinks, backlinksOverview, backlinksPages, domainRatings } from "./backlinks.js";
 import { domainOverview, domainPages, rankedKeywords, serpCompetitors } from "./domain.js";
@@ -120,6 +124,20 @@ TRACKER_SETTINGS: --devices mobile|desktop|both --depth 10-100 (multiple of 10) 
   agenticseo ai brand BRAND_OR_DOMAIN [--competitors A,B,...] [--scope SCOPE] [MARKET] [--project DIR]
   agenticseo ai prompt "PROMPT" [--models chat_gpt,claude,gemini,perplexity] [--brand NAME]
       [--no-web-search] [--web-country US] [--project DIR]
+  agenticseo google connect [--for search-console|analytics|all]
+  agenticseo google accounts
+  agenticseo google disconnect EMAIL_OR_ID
+  agenticseo gsc sites [--project DIR]
+  agenticseo gsc use SITE_URL [--account EMAIL] [--project DIR]
+  agenticseo gsc disconnect [--project DIR]
+  agenticseo gsc performance [--dimensions query,page,country,device,date,searchAppearance]
+      [--range RANGE | --start YYYY-MM-DD --end YYYY-MM-DD] [--filter DIMENSION:OPERATOR:EXPRESSION]...
+      [--limit 1-1000] [--start-row N] [--min-position N] [--max-position N] [--min-impressions N]
+      [--type web|image|video|news|googleNews|discover] [--data-state all|final] [--project DIR]
+  agenticseo gsc report [--range last_7_days|last_28_days|last_3_months] [--device DESKTOP|MOBILE|TABLET] [--country ISO3] [--project DIR]
+  agenticseo gsc export [--dimension query|page] [--range ...] [--device ...] [--country ...] [--format csv|jsonl] [--out FILE] [--project DIR]
+  agenticseo gsc inspect URL... [--language en-US] [--project DIR]
+RANGE: last_7_days, last_28_days, last_3_months, last_6_months, last_12_months, last_16_months
   agenticseo query "SELECT ..." [--project DIR]
 MARKET overrides the project's market for one call: --location US|2840 [--language en]
 FILTERS: --search TEXT --include TERM,... --exclude TERM,... --tags TAG,... --min-volume N --max-volume N
@@ -210,6 +228,22 @@ function enumOption<T extends string>(args: string[], name: string, values: read
 /** A comma-separated list, e.g. --types organic,paid. */
 function listOption(args: string[], name: string) {
   return option(args, name)?.split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+/** Every value of a repeatable option, e.g. --filter a --filter b. */
+function allOptions(args: string[], name: string) {
+  const values: string[] = [];
+  for (let value = option(args, name); value !== undefined; value = option(args, name)) values.push(value);
+  return values;
+}
+
+/** Show a URL in the user's browser; it is printed first, so a missing browser only costs a copy and paste. */
+async function openInBrowser(url: string) {
+  console.error(`Open this address to authorize AgenticSEO with Google:\n${url}`);
+  const [opener, ...openerArgs] = process.platform === "darwin" ? ["open"] : process.platform === "win32" ? ["cmd", "/c", "start", '""'] : ["xdg-open"];
+  const child = spawn(opener, [...openerArgs, url], { detached: true, stdio: "ignore" });
+  child.on("error", () => console.error("Could not open a browser; open the address above yourself."));
+  child.unref();
 }
 
 function flag(args: string[], name: string) {
@@ -884,6 +918,99 @@ async function run([command, ...args]: string[]): Promise<unknown> {
         ),
         evidence,
       };
+    }
+    throw new OperationError("input", usage);
+  }
+
+  if (command === "google") {
+    const [action, ...rest] = args;
+    args = rest;
+    if (action === "connect") {
+      const target = enumOption(args, "--for", ["search-console", "analytics", "all"] as const) ?? "all";
+      rejectUnknown(args);
+      const products: GoogleProduct[] = target === "all" ? ["searchConsole", "analytics"] : [target === "search-console" ? "searchConsole" : "analytics"];
+      return connectGoogle({ products, openUrl: openInBrowser });
+    }
+    if (action === "accounts") {
+      rejectUnknown(args);
+      return { accounts: await listGoogleAccounts() };
+    }
+    if (action === "disconnect") return disconnectGoogle(positionals(args, "account email or id", 1)[0]);
+    throw new OperationError("input", usage);
+  }
+
+  if (command === "gsc") {
+    const [action, ...rest] = args;
+    args = rest;
+    const root = await findProjectRoot(projectOption);
+    const reportFilters = () => ({
+      dateRange: enumOption(args, "--range", ["last_7_days", "last_28_days", "last_3_months"] as const) ?? "last_28_days",
+      device: enumOption(args, "--device", ["DESKTOP", "MOBILE", "TABLET"] as const),
+      country: option(args, "--country"),
+    });
+    if (action === "sites") {
+      rejectUnknown(args);
+      return searchConsoleSites();
+    }
+    if (action === "use") {
+      const account = option(args, "--account");
+      return useSearchConsoleSite(root, { siteUrl: positionals(args, "site URL", 1)[0], account });
+    }
+    if (action === "disconnect") {
+      rejectUnknown(args);
+      return disconnectSearchConsole(root);
+    }
+    if (action === "performance") {
+      const filters = allOptions(args, "--filter").map((value) => {
+        const [dimension, operator, ...expression] = value.split(":");
+        if (!GSC_DIMENSIONS.includes(dimension as GscDimension) || !GSC_FILTER_OPERATORS.includes(operator as (typeof GSC_FILTER_OPERATORS)[number]) || expression.length === 0) {
+          throw new OperationError("input", `--filter must be DIMENSION:OPERATOR:EXPRESSION with a dimension in ${GSC_DIMENSIONS.join(", ")} and an operator in ${GSC_FILTER_OPERATORS.join(", ")}`);
+        }
+        return { dimension: dimension as GscDimension, operator: operator as (typeof GSC_FILTER_OPERATORS)[number], expression: expression.join(":") };
+      });
+      const dimensions = listOption(args, "--dimensions");
+      const unknownDimension = dimensions?.find((dimension) => !GSC_DIMENSIONS.includes(dimension as GscDimension));
+      if (unknownDimension) throw new OperationError("input", `Unknown dimension ${unknownDimension}; use ${GSC_DIMENSIONS.join(", ")}`);
+      const date = (name: string) => {
+        const value = option(args, name);
+        if (value !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new OperationError("input", `${name} must be YYYY-MM-DD`);
+        return value;
+      };
+      const input = {
+        dimensions: dimensions as GscDimension[] | undefined,
+        dateRange: enumOption(args, "--range", GSC_DATE_RANGES),
+        startDate: date("--start"),
+        endDate: date("--end"),
+        filters: filters.length > 0 ? filters : undefined,
+        rowLimit: intOption(args, "--limit", 1, GSC_MAX_ROW_LIMIT),
+        startRow: intOption(args, "--start-row", 0, 1_000_000),
+        minPosition: numberOption(args, "--min-position"),
+        maxPosition: numberOption(args, "--max-position"),
+        minImpressions: intOption(args, "--min-impressions", 0, Number.MAX_SAFE_INTEGER),
+        type: enumOption(args, "--type", GSC_SEARCH_TYPES),
+        dataState: enumOption(args, "--data-state", ["all", "final"] as const),
+      };
+      rejectUnknown(args);
+      return searchConsolePerformance(root, input);
+    }
+    if (action === "report") {
+      const input = reportFilters();
+      rejectUnknown(args);
+      return searchConsoleReport(root, input);
+    }
+    if (action === "export") {
+      const input = {
+        ...reportFilters(),
+        dimension: enumOption(args, "--dimension", ["query", "page"] as const) ?? "query",
+        format: enumOption(args, "--format", ["csv", "jsonl"] as const) ?? "csv",
+        out: option(args, "--out"),
+      };
+      rejectUnknown(args);
+      return exportSearchConsole(root, input);
+    }
+    if (action === "inspect") {
+      const languageCode = option(args, "--language");
+      return searchConsoleInspect(root, { urls: positionals(args, "URLs", 10), languageCode });
     }
     throw new OperationError("input", usage);
   }
