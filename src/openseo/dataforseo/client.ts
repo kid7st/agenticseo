@@ -10,6 +10,13 @@ import {
   type DataforseoApiResponse,
 } from "./envelope.js";
 import {
+  fetchBusinessListingsSearch,
+  fetchMyBusinessInfo,
+  fetchQuestionsAnswers,
+  postGoogleReviewsTask,
+  postMyBusinessUpdatesTask,
+} from "./business.js";
+import {
   fetchBacklinksHistory,
   fetchBacklinksRows,
   fetchBacklinksSummary,
@@ -27,7 +34,7 @@ import {
   fetchRelevantPages,
   fetchSerpCompetitors,
 } from "./labs.js";
-import { fetchLiveSerp } from "./serp.js";
+import { fetchLiveSerp, fetchLocalSerp } from "./serp.js";
 
 export type ProviderCall = { path: string[]; costUsd: number; items: unknown };
 
@@ -57,6 +64,15 @@ function meter<I, T>(
 
 export function createDataforseoClient(ledger: ProviderCall[]) {
   return {
+    business: {
+      businessListings: meter(ledger, fetchBusinessListingsSearch),
+      questionsAnswers: meter(ledger, fetchQuestionsAnswers),
+      myBusinessInfo: meter(ledger, fetchMyBusinessInfo),
+      // task_post is where DataForSEO charges; collection runs unmetered
+      // through fetchBusinessDataTaskResult.
+      reviewsTaskPost: meter(ledger, postGoogleReviewsTask),
+      updatesTaskPost: meter(ledger, postMyBusinessUpdatesTask),
+    },
     backlinks: {
       summary: meter(ledger, fetchBacklinksSummary),
       rows: meter(ledger, fetchBacklinksRows),
@@ -79,6 +95,7 @@ export function createDataforseoClient(ledger: ProviderCall[]) {
     },
     serp: {
       live: meter(ledger, fetchLiveSerp),
+      local: meter(ledger, fetchLocalSerp),
     },
     labs: {
       keywordOverview: meter(ledger, fetchKeywordOverview),

@@ -4,7 +4,8 @@ import { OperationError } from "./errors.js";
 import { backlinksDomains, backlinksLinks, backlinksOverview, backlinksPages, domainRatings } from "./backlinks.js";
 import { domainOverview, domainPages, rankedKeywords, serpCompetitors } from "./domain.js";
 import { keywordMetrics, researchKeywords, serpResults } from "./keywords.js";
-import { marketForCall, marketForNewProject } from "./market.js";
+import { localBusinesses, localCategories, localProfile, localQuestions, localRankGrid, localSerp } from "./local.js";
+import { languageForCall, marketForCall, marketForNewProject } from "./market.js";
 import { RESEARCH_SCOPES, type ResearchScope } from "./openseo/researchScope.js";
 import { deleteTagCommand, exportCommand, listCommand, refreshCommand, removeCommand, renameTagCommand, saveCommand, tagCommand, type SavedFilters } from "./saved.js";
 import { queryStore, withStore } from "./store.js";
@@ -51,6 +52,17 @@ const usage = `Usage:
       [--min-backlinks N] [--max-backlinks N] [--min-referring-domains N] [--max-referring-domains N]
       [--min-rank N] [--max-rank N] [--project DIR]
   agenticseo domain-rating DOMAIN... [--project DIR]
+  agenticseo local businesses --near LAT,LNG --radius KM [--query TEXT] [--categories SLUG,...]
+      [--min-rating 1-5] [--min-reviews N] [--claimed|--unclaimed] [--sort relevance|rating|reviews]
+      [--limit 1-50] [--offset N] [--project DIR]
+  agenticseo local serp "QUERY" --near LAT,LNG [--zoom 4-18] [--type maps|local_finder]
+      [--device mobile|desktop] [--depth 1-100] [--language CODE] [--project DIR]
+  agenticseo local categories [TEXT] [--limit 1-200] [--project DIR]
+  agenticseo local profile BUSINESS [--near LAT,LNG [--radius KM]] [MARKET] [--project DIR]
+  agenticseo local questions BUSINESS --near LAT,LNG --radius KM [--depth 1-100] [--language CODE] [--project DIR]
+  agenticseo local grid "QUERY" --center LAT,LNG TARGET [--size 3|5] [--spacing KM] [--zoom 4-18]
+      [--device mobile|desktop] [--language CODE] [--project DIR]
+BUSINESS is one of --name TEXT, --cid ID or --place-id ID; TARGET is any of --cid, --place-id or --name
   agenticseo query "SELECT ..." [--project DIR]
 MARKET overrides the project's market for one call: --location US|2840 [--language en]
 FILTERS: --search TEXT --include TERM,... --exclude TERM,... --tags TAG,... --min-volume N --max-volume N
@@ -102,6 +114,19 @@ function savedFilters(args: string[]): SavedFilters {
     sort: enumOption(args, "--sort", ["createdAt", "keyword", "searchVolume", "cpc", "competition", "keywordDifficulty", "fetchedAt"] as const),
     order: enumOption(args, "--order", ["desc", "asc"] as const),
   };
+}
+
+/** "LAT,LNG" as two numbers; the ranges are checked by OpenSEO's schemas downstream. */
+function coordinateOption(args: string[], name: string) {
+  const value = option(args, name);
+  if (value === undefined) return undefined;
+  const parts = value.split(",").map((part) => Number(part.trim()));
+  if (parts.length !== 2 || parts.some((part) => !Number.isFinite(part))) throw new OperationError("input", `${name} must be LAT,LNG, for example 40.7128,-74.006`);
+  return { latitude: parts[0], longitude: parts[1] };
+}
+
+function businessOptions(args: string[]) {
+  return { businessName: option(args, "--name"), cid: option(args, "--cid"), placeId: option(args, "--place-id") };
 }
 
 /** Remaining positional arguments, after every known option was consumed. */
@@ -453,6 +478,93 @@ async function run([command, ...args]: string[]): Promise<unknown> {
     const domains = positionals(args, "domains", 100);
     // Ahrefs' Domain Rating License requires this attribution wherever the numbers appear.
     return { provider: "Ahrefs", attribution: "Domain Rating by Ahrefs", ...(await domainRatings(domains, await cacheDirectory(await findProjectRoot(projectOption)))) };
+  }
+
+  if (command === "local") {
+    const action = args.shift();
+    const root = await findProjectRoot(projectOption);
+    const project = await readProject(root);
+    let result: { costUsd: number; calls: unknown[] } & Record<string, unknown>;
+    if (action === "categories") {
+      const limit = intOption(args, "--limit", 1, 200) ?? 50;
+      const query = args.length === 0 ? undefined : singlePhrase(args, "category search text");
+      // Free at DataForSEO and cached for a week, so no evidence record.
+      return localCategories({ query, limit, cacheDirectory: await cacheDirectory(root) });
+    }
+    if (action === "businesses") {
+      const near = coordinateOption(args, "--near");
+      const radiusKm = numberOption(args, "--radius");
+      if (!near || radiusKm === undefined) throw new OperationError("input", "--near LAT,LNG and --radius KM are required");
+      const claimed = flag(args, "--claimed");
+      const unclaimed = flag(args, "--unclaimed");
+      if (claimed && unclaimed) throw new OperationError("input", "Pass --claimed or --unclaimed, not both");
+      const input = {
+        near: { ...near, radiusKm },
+        query: option(args, "--query"),
+        categories: listOption(args, "--categories"),
+        minRating: numberOption(args, "--min-rating"),
+        minReviews: intOption(args, "--min-reviews", 0, Number.MAX_SAFE_INTEGER),
+        isClaimed: claimed ? true : unclaimed ? false : undefined,
+        sortBy: enumOption(args, "--sort", ["relevance", "rating", "reviews"] as const),
+        limit: intOption(args, "--limit", 1, 50) ?? 20,
+        offset: intOption(args, "--offset", 0, 1000),
+      };
+      rejectUnknown(args);
+      result = { request: input, ...(await localBusinesses(input)) };
+    } else if (action === "serp") {
+      const near = coordinateOption(args, "--near");
+      if (!near) throw new OperationError("input", "--near LAT,LNG is required");
+      const input = {
+        near: { ...near, zoom: intOption(args, "--zoom", 4, 18) },
+        searchType: enumOption(args, "--type", ["maps", "local_finder"] as const) ?? "maps",
+        device: enumOption(args, "--device", ["mobile", "desktop"] as const) ?? "mobile",
+        depth: intOption(args, "--depth", 1, 100) ?? 20,
+        languageCode: languageForCall(project, option(args, "--language")),
+      };
+      const keyword = singlePhrase(args, "search query");
+      result = { request: { keyword, ...input }, ...(await localSerp({ keyword, ...input })) };
+    } else if (action === "profile") {
+      const near = coordinateOption(args, "--near");
+      const radiusKm = numberOption(args, "--radius");
+      if (radiusKm !== undefined && !near) throw new OperationError("input", "--radius needs --near");
+      const business = businessOptions(args);
+      const market = marketForCall(project, { location: option(args, "--location"), language: option(args, "--language") });
+      rejectUnknown(args);
+      const profileResult = await localProfile({ ...business, near: near && { ...near, radiusKm }, ...market });
+      const profile = profileResult.profile;
+      // The fields OpenSEO's get_business_profile prints; the full record is in the evidence.
+      const fields = ["title", "category", "additional_categories", "rating", "rating_distribution", "address", "phone", "url", "domain", "is_claimed", "work_time", "total_photos", "cid", "place_id", "check_url"];
+      result = { ...profileResult, request: { ...business, near, radiusKm, market }, found: profile != null, profileSummary: profile && Object.fromEntries(fields.filter((field) => field in profile).map((field) => [field, profile[field]])) };
+    } else if (action === "questions") {
+      const near = coordinateOption(args, "--near");
+      const radiusKm = numberOption(args, "--radius");
+      if (!near || radiusKm === undefined) throw new OperationError("input", "--near LAT,LNG and --radius KM are required");
+      const input = { ...businessOptions(args), near: { ...near, radiusKm }, depth: intOption(args, "--depth", 1, 100) ?? 20, languageCode: languageForCall(project, option(args, "--language")) };
+      rejectUnknown(args);
+      result = { request: input, ...(await localQuestions(input)) };
+    } else if (action === "grid") {
+      const center = coordinateOption(args, "--center");
+      if (!center) throw new OperationError("input", "--center LAT,LNG is required");
+      const size = option(args, "--size");
+      if (size !== undefined && size !== "3" && size !== "5") throw new OperationError("input", "--size must be 3 or 5");
+      const input = {
+        center,
+        target: { cid: option(args, "--cid"), placeId: option(args, "--place-id"), name: option(args, "--name") },
+        gridSize: size === undefined ? undefined : (Number(size) as 3 | 5),
+        spacingKm: numberOption(args, "--spacing"),
+        zoom: intOption(args, "--zoom", 4, 18),
+        device: enumOption(args, "--device", ["mobile", "desktop"] as const),
+        languageCode: languageForCall(project, option(args, "--language")),
+      };
+      const keyword = singlePhrase(args, "search query");
+      result = { request: { keyword, ...input }, ...(await localRankGrid({ keyword, ...input })) };
+    } else {
+      throw new OperationError("input", usage);
+    }
+    const fetchedAt = new Date().toISOString();
+    const evidence = await saveEvidence(root, fetchedAt, { provider: "DataForSEO", fetchedAt, view: `local ${action}`, project, ...result });
+    const { calls: _calls, profile: _fullProfile, ...summary } = result;
+    return { provider: "DataForSEO", fetchedAt, view: `local ${action}`, ...summary, evidence };
   }
 
   if (command === "query") {

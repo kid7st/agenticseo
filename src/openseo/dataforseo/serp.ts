@@ -1,5 +1,6 @@
 // Ported from OpenSEO src/server/lib/dataforseo/serp.ts at commit
-// 0ffff93101043aad7600a3b6a499a0cd2887ef49 (live organic SERP subset).
+// 0ffff93101043aad7600a3b6a499a0cd2887ef49 (live organic and local SERP subset).
+// Local change: local SERP rows are validated as records before callers read them.
 // Copyright (c) 2026 Ben Senescu. MIT License; see LICENSES/OpenSEO.txt.
 import { z } from "zod";
 import { dataforseoPost } from "./core.js";
@@ -8,6 +9,7 @@ import {
   buildTaskBilling,
   parseTaskItems,
   type DataforseoApiResponse,
+  type DataforseoItemsTask,
 } from "./envelope.js";
 
 // Default depth for keyword SERP analysis. DataForSEO crawls (and bills) one
@@ -91,6 +93,62 @@ export async function fetchLiveSerp(input: {
       task,
       serpSnapshotItemSchema,
     ),
+    billing: buildTaskBilling(task),
+  };
+}
+
+// Local SERP rows stay untyped records; callers pick fields by name.
+const localSerpItemSchema = z.record(z.string(), z.unknown());
+
+export async function fetchLocalSerp(input: {
+  keyword: string;
+  locationCoordinate?: string;
+  languageCode: string;
+  searchType: "maps" | "local_finder";
+  device: "desktop" | "mobile";
+  depth: number;
+  searchPlaces?: boolean;
+}): Promise<DataforseoApiResponse<Record<string, unknown>[]>> {
+  const os = input.device === "desktop" ? "windows" : "android";
+
+  if (input.searchType === "maps") {
+    const response = await dataforseoPost<
+      DataforseoItemsTask<Record<string, unknown>>
+    >("/v3/serp/google/maps/live/advanced", [
+      {
+        keyword: input.keyword,
+        location_coordinate: input.locationCoordinate,
+        language_code: input.languageCode,
+        device: input.device,
+        os,
+        depth: input.depth,
+        search_places: input.searchPlaces,
+      },
+    ]);
+    // 40501 = billed empty SERP; DataForSEO returns it for some coordinate-only
+    // Maps and Local Finder queries (both paths below opt in).
+    const task = assertOk(response, { treatNoResultsAsEmpty: true });
+    return {
+      data: parseTaskItems("google-maps-live-advanced", task, localSerpItemSchema),
+      billing: buildTaskBilling(task),
+    };
+  }
+
+  const response = await dataforseoPost<
+    DataforseoItemsTask<Record<string, unknown>>
+  >("/v3/serp/google/local_finder/live/advanced", [
+    {
+      keyword: input.keyword,
+      location_coordinate: input.locationCoordinate,
+      language_code: input.languageCode,
+      device: input.device,
+      os,
+      depth: input.depth,
+    },
+  ]);
+  const task = assertOk(response, { treatNoResultsAsEmpty: true });
+  return {
+    data: parseTaskItems("google-local-finder-live-advanced", task, localSerpItemSchema),
     billing: buildTaskBilling(task),
   };
 }
