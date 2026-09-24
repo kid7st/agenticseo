@@ -56,12 +56,12 @@ Every result states `source`, date, market and `costUsd`, and points to an `evid
 Deliver through the `seo-report` skill. If a report template applies, its sections and tone replace this list. Otherwise, after the `# <site or topic> — <date>` title and the summary:
 
 1. **The opportunity**: the best theme and why the site can win it now.
-2. **Target these now**: a table of keyword, intent, volume, difficulty, CPC and the page to make.
+2. **Target these now**: a table of keyword, intent, volume, difficulty, CPC and the page to make. Add a bar chart comparing the volumes of the shortlist.
 3. **Why these**: one finding per keyword that needs justifying, with the SERP or metric evidence and the page to build.
 4. **The longer opportunity list**: a second table with the same columns.
 5. **Risks and caveats**: SERP intent that would change the recommendation, missing metrics written as `unknown`, close-variant volumes that are one bucket rather than several.
-6. **What to do next**: an ordered list.
-7. **How this report was made**: the commands run, the market, the dates, the costs and the evidence paths.
+6. **What to do next**: an ordered list, including whether to run `keyword-clustering`, write a content brief, or save the chosen keywords.
+7. **How this report was made**: opens with the skill link line from `seo-report`, pointing at `https://github.com/kid7st/agenticseo/blob/main/.agents/skills/keyword-research/SKILL.md` ("AgenticSEO Keyword Research skill"), then the commands run, the market, the dates, the costs and the evidence paths.
 
 ## Guardrails
 
