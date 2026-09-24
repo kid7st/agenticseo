@@ -119,6 +119,11 @@ function savedFilters(args: string[]): SavedFilters {
   };
 }
 
+function pickFields(row: unknown, fields: string[]) {
+  const source = row as Record<string, unknown>;
+  return Object.fromEntries(fields.filter((field) => source[field] !== undefined).map((field) => [field, source[field]]));
+}
+
 /** "LAT,LNG" as two numbers; the ranges are checked by OpenSEO's schemas downstream. */
 function coordinateOption(args: string[], name: string) {
   const value = option(args, name);
@@ -207,7 +212,7 @@ async function run([command, ...args]: string[]): Promise<unknown> {
       throw new OperationError("input", "Provide 1–700 non-empty keyword terms");
     }
     const fetchedAt = new Date().toISOString();
-    const result = await keywordMetrics(market, keywords, { includeClickstreamData });
+    const result = await withStore(root, (db) => keywordMetrics(market, keywords, { includeClickstreamData, db }));
     const evidence = await saveEvidence(root, fetchedAt, { provider: "DataForSEO", fetchedAt, project, market, keywords, includeClickstreamData, ...result });
     return {
       provider: "DataForSEO",
@@ -492,7 +497,7 @@ async function run([command, ...args]: string[]): Promise<unknown> {
       const limit = intOption(args, "--limit", 1, 200) ?? 50;
       const query = args.length === 0 ? undefined : singlePhrase(args, "category search text");
       // Free at DataForSEO and cached for a week, so no evidence record.
-      return localCategories({ query, limit, cacheDirectory: await cacheDirectory(root) });
+      return { provider: "DataForSEO", ...(await localCategories({ query, limit, cacheDirectory: await cacheDirectory(root) })) };
     }
     if (action === "businesses") {
       const near = coordinateOption(args, "--near");
@@ -589,6 +594,10 @@ async function run([command, ...args]: string[]): Promise<unknown> {
     const fetchedAt = new Date().toISOString();
     const evidence = await saveEvidence(root, fetchedAt, { provider: "DataForSEO", fetchedAt, view: `local ${action}`, project, ...result });
     const { calls: _calls, profile: _fullProfile, ...summary } = result;
+    // Upstream's MCP text shows these views as short tables; the allowlisted rows
+    // (hours, rating distributions, original-language review text) stay in the evidence.
+    if (Array.isArray(summary.results)) summary.results = summary.results.map((row) => pickFields(row, ["rank_absolute", "rank_group", "title", "domain", "url", "category", "rating", "phone", "address", "is_claimed", "cid", "place_id", "latitude", "longitude"]));
+    if (Array.isArray(summary.reviews)) summary.reviews = summary.reviews.map((row) => pickFields(row, ["rank_absolute", "timestamp", "rating", "profile_name", "source", "review_text", "owner_answer"]));
     return { provider: "DataForSEO", fetchedAt, view: `local ${action}`, ...summary, evidence };
   }
 

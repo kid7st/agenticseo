@@ -4,18 +4,27 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { OperationError } from "../src/errors.js";
+import { listCommand, saveCommand } from "../src/saved.js";
+import { openStore } from "../src/store.js";
 import { keywordMetrics } from "../src/keywords.js";
 import { runCli, withFetch, type Handler } from "./helpers.js";
 
 const fixture = JSON.parse(await readFile(new URL("./keyword-overview.json", import.meta.url), "utf8")) as Record<string, unknown>;
 const project = { domain: "example.com", locationCode: 2840, languageCode: "en" };
+// One scratch project database for the metric lookups in this file.
+const storeRoot = await mkdtemp(join(tmpdir(), "agenticseo-keywords-"));
+const db = await openStore(storeRoot);
+test.after(async () => {
+  db.close();
+  await rm(storeRoot, { recursive: true, force: true });
+});
 const labsUrl = "https://api.dataforseo.com/v3/dataforseo_labs/google/keyword_overview/live";
 const adsUrl = "https://api.dataforseo.com/v3/keywords_data/google_ads/search_volume/live";
 
 const taskResponse = (task: Record<string, unknown>) => Response.json({ status_code: 20000, tasks: [{ path: ["v3", "x"], ...task }] });
 
 async function failure(handler: Handler, apiKey?: string) {
-  const { result } = await withFetch(handler, () => keywordMetrics(project, ["seo audit"], { includeClickstreamData: false }).then(
+  const { result } = await withFetch(handler, () => keywordMetrics(project, ["seo audit"], { includeClickstreamData: false, db }).then(
     () => assert.fail("expected a failure"),
     (error: unknown) => (assert.ok(error instanceof OperationError, String(error)), error),
   ), apiKey);
@@ -23,7 +32,7 @@ async function failure(handler: Handler, apiKey?: string) {
 }
 
 test("maps Labs metrics without inventing missing values and records the raw call", async () => {
-  const { result, requests } = await withFetch(() => Response.json(fixture), () => keywordMetrics(project, ["seo audit", "seo tool"], { includeClickstreamData: false }));
+  const { result, requests } = await withFetch(() => Response.json(fixture), () => keywordMetrics(project, ["seo audit", "seo tool"], { includeClickstreamData: false, db }));
   assert.deepEqual(requests, [{ url: labsUrl, authorization: "Basic TEST_KEY", body: [{ keywords: ["seo audit", "seo tool"], location_code: 2840, language_code: "en", include_clickstream_data: false }] }]);
   assert.equal(result.source, "labs");
   assert.deepEqual(result.rows, [
@@ -34,23 +43,31 @@ test("maps Labs metrics without inventing missing values and records the raw cal
   assert.equal((result.calls[0].items as unknown[]).length, 2, "raw items are kept for evidence");
 });
 
+test("looked-up metrics become the saved keywords' snapshot, so saving needs no second paid call", async () => {
+  await withFetch(() => Response.json(fixture), () => keywordMetrics(project, ["SEO Audit", "seo tool"], { includeClickstreamData: false, db }));
+  await saveCommand(storeRoot, project, { keywords: ["seo audit", "seo tool"], replaceTags: false });
+  const listed = await listCommand(storeRoot, { page: 1, pageSize: 100, sort: "keyword", order: "asc" });
+  assert.deepEqual(listed.rows.map((row) => [row.keyword, row.searchVolume, row.keywordDifficulty, row.intent]), [["seo audit", 1200, 35, "commercial"], ["seo tool", null, null, "unknown"]]);
+  assert.ok(listed.rows[0].fetchedAt, "the snapshot records when it was fetched");
+});
+
 test("routes Google-Ads-only markets to search volume, as OpenSEO does", async () => {
   const andorra = { ...project, locationCode: 2020, languageCode: "ca" };
   const ads = { status_code: 20000, tasks: [{ status_code: 20000, cost: 0.075, path: ["v3", "keywords_data"], result: [
     { keyword: "seo audit", search_volume: 20, cpc: 1.1, competition: "LOW", competition_index: 12, monthly_searches: null },
     { keyword: "zzqx", search_volume: null, cpc: null, competition: null, competition_index: null, monthly_searches: null },
   ] }] };
-  const { result, requests } = await withFetch(() => Response.json(ads), () => keywordMetrics(andorra, ["seo audit", "zzqx"], { includeClickstreamData: false }));
+  const { result, requests } = await withFetch(() => Response.json(ads), () => keywordMetrics(andorra, ["seo audit", "zzqx"], { includeClickstreamData: false, db }));
   assert.equal(requests[0].url, adsUrl);
   assert.equal(result.source, "google_ads");
   assert.deepEqual(result.rows, [{ keyword: "seo audit", searchVolume: 20, cpc: 1.1, competition: 0.12, competitionLevel: "LOW", keywordDifficulty: null, intent: null, monthlySearches: [] }]);
   assert.deepEqual(result.missingKeywords, ["zzqx"]);
-  await assert.rejects(keywordMetrics(andorra, ["seo audit"], { includeClickstreamData: true }), /only to markets served by DataForSEO Labs/);
+  await assert.rejects(keywordMetrics(andorra, ["seo audit"], { includeClickstreamData: true, db }), /only to markets served by DataForSEO Labs/);
 });
 
 test("retries a transient 5xx and then succeeds", async () => {
   let attempts = 0;
-  const { result } = await withFetch(() => (++attempts < 3 ? new Response("busy", { status: 503 }) : Response.json(fixture)), () => keywordMetrics(project, ["seo audit"], { includeClickstreamData: false }));
+  const { result } = await withFetch(() => (++attempts < 3 ? new Response("busy", { status: 503 }) : Response.json(fixture)), () => keywordMetrics(project, ["seo audit"], { includeClickstreamData: false, db }));
   assert.equal(attempts, 3);
   assert.equal(result.rows.length, 1);
 });

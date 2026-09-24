@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -169,6 +169,18 @@ test("posts use the business keyword prefix, trim rows and refuse a reviews task
   assert.ok(result.status === "completed");
   assert.deepEqual([result.status, result.taskId, result.updates], ["completed", "p-1", [{ post_date: "2026-09-01", post_text: "New menu", url: "https://g.page/p" }]]);
   await withFetch(() => assert.fail("no call"), () => assert.rejects(localPosts({ ...us, taskId: "google:t-1", depth: 10 }), isInput(/looks like a reviews taskId/)));
+});
+
+test("local serp and reviews print compact rows and keep the full rows in the evidence", async () => {
+  await withProject(async (root) => {
+    const env = { DATAFORSEO_API_KEY: "TEST_KEY" };
+    const serp = JSON.parse(runCli(root, ["local", "serp", "pizza", "--near", "40.73,-74"], { env, mock: true }).stdout) as { results: Array<Record<string, unknown>>; evidence: string };
+    assert.deepEqual(serp.results, [{ rank_absolute: 1, title: "Little Charli", rating: { value: 4.9 }, cid: "1" }]);
+    assert.ok(JSON.parse(await readFile(serp.evidence, "utf8")).results[0].work_hours, "hours stay in the evidence");
+    const reviews = JSON.parse(runCli(root, ["local", "reviews", "--cid", "1"], { env, mock: true }).stdout) as { reviews: Array<Record<string, unknown>>; evidence: string };
+    assert.deepEqual(reviews.reviews, [{ rating: { value: 1 }, review_text: "Cold" }]);
+    assert.equal(JSON.parse(await readFile(reviews.evidence, "utf8")).reviews[0].original_review_text, "Cold");
+  });
 });
 
 test("local commands validate their options with the input exit code", async () => {
