@@ -154,9 +154,10 @@ describe("Google Analytics", () => {
           JSON.stringify({ error: { code: 403, message: `Google Analytics ${service} API has not been used in project 1 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/${service}/overview?project=1`, status: "PERMISSION_DENIED", details: [{ reason: "SERVICE_DISABLED" }] } }),
           { status: 403 },
         );
-      const { result } = await withFetch(() => disabled("analyticsadmin.googleapis.com"), () => analyticsProperties());
-      assert.equal(result.accounts[0].requiresReconnect, false);
-      assert.match(result.accounts[0].error ?? "", /analyticsadmin\.googleapis\.com API has not been used .*Enable it by visiting/);
+      await withFetch(
+        () => disabled("analyticsadmin.googleapis.com"),
+        () => assert.rejects(analyticsProperties(), failsWith("provider", /analyticsadmin\.googleapis\.com API has not been used .*Enable it by visiting/)),
+      );
     });
     await connectedProject(async (root) => {
       await withFetch(google(() => disabled_data()), () =>

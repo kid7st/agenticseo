@@ -34,23 +34,27 @@ const searchConsoleAccounts = async () => (await listGoogleAccounts()).filter((a
 export async function listSites() {
   const accounts = await searchConsoleAccounts();
   if (accounts.length === 0) throw new OperationError("credentials", "No Google account is connected for Search Console; run agenticseo google connect");
-  return {
-    accounts: await Promise.all(
-      accounts.map(async (account) => {
-        try {
-          return { accountId: account.accountId, email: account.email, requiresReconnect: false, sites: await createGscClient({ accountId: account.accountId }).listSites() };
-        } catch (error) {
-          return {
-            accountId: account.accountId,
-            email: account.email,
-            requiresReconnect: isExpectedGrantFailure(error),
-            error: error instanceof Error ? error.message : String(error),
-            sites: [] as GscSite[],
-          };
-        }
-      }),
-    ),
-  };
+  const failures: unknown[] = [];
+  const listed = await Promise.all(
+    accounts.map(async (account) => {
+      try {
+        return { accountId: account.accountId, email: account.email, requiresReconnect: false, sites: await createGscClient({ accountId: account.accountId }).listSites() };
+      } catch (error) {
+        failures.push(error);
+        return {
+          accountId: account.accountId,
+          email: account.email,
+          requiresReconnect: isExpectedGrantFailure(error),
+          error: error instanceof Error ? error.message : String(error),
+          sites: [] as GscSite[],
+        };
+      }
+    }),
+  );
+  // One account failing among others is reported per account; when none can
+  // list anything, the command fails with the reason instead of an empty list.
+  if (failures.length === accounts.length) throw failures[0];
+  return { accounts: listed };
 }
 
 /** Pick a verified property for the project. Rejects unverified properties and ones no connected account can read. */
