@@ -104,6 +104,29 @@ function oauthClient() {
   return { clientId, clientSecret };
 }
 
+/**
+ * Ask Google whether it knows this client before sending the user to its consent
+ * page, which is the only other place a wrong client shows up. Exchanging a bogus
+ * code reaches the client check first: an unknown client or wrong secret answers
+ * invalid_client, a valid pair answers invalid_grant for the code.
+ */
+async function assertClientKnown(clientId: string, clientSecret: string) {
+  const response = await fetch(GOOGLE_TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, grant_type: "authorization_code", code: "agenticseo-client-check", redirect_uri: "http://127.0.0.1" }),
+  });
+  const body = z.object({ error: z.string().optional(), error_description: z.string().optional() }).catch({}).parse(await response.json().catch(() => ({})));
+  if (body.error !== "invalid_client") return;
+  const reason = body.error_description ?? "invalid client";
+  throw new OperationError(
+    "credentials",
+    /not found/i.test(reason)
+      ? `Google does not know the OAuth client ${clientId} (${reason}). A new client can take minutes to hours to take effect; otherwise copy the Client ID again from the Desktop client in the same Google Cloud project`
+      : `Google rejected the OAuth client secret (${reason}); copy the Client secret of the same Desktop client`,
+  );
+}
+
 /** Wait for Google to redirect the browser back to the loopback address with a code. */
 function awaitRedirect(state: string, onListening: (redirectUri: string) => Promise<void>) {
   return new Promise<{ code: string; redirectUri: string }>((resolve, reject) => {
@@ -161,6 +184,7 @@ function awaitRedirect(state: string, onListening: (redirectUri: string) => Prom
  */
 export async function connectGoogle(input: { products: GoogleProduct[]; openUrl: (url: string) => Promise<void> }) {
   const { clientId, clientSecret } = oauthClient();
+  await assertClientKnown(clientId, clientSecret);
   const verifier = base64Url(randomBytes(32));
   const state = base64Url(randomBytes(16));
   const requested = ["openid", "email", ...input.products.map((product) => GOOGLE_PRODUCT_SCOPES[product])];
