@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { OperationError } from "../src/errors.js";
-import { localBusinesses, localCategories, localProfile, localQuestions, localRankGrid, localSerp } from "../src/local.js";
+import { localBusinesses, localCategories, localPosts, localProfile, localQuestions, localRankGrid, localReviews, localSerp } from "../src/local.js";
 import { runCli, withFetch, withProject } from "./helpers.js";
 
 const api = "https://api.dataforseo.com/v3";
@@ -122,6 +122,53 @@ test("the rank grid stops on a credentials failure and surfaces a systemic one",
     /DataForSEO HTTP 403/,
   ));
   await withFetch(() => assert.fail("no call"), () => assert.rejects(localRankGrid({ keyword: "pizza", center: { latitude: 40, longitude: -74 }, target: {}, languageCode: "en" }), isInput(/target needs at least one/)));
+});
+
+const posted = (id: string, cost = 0.00375) => Response.json({ status_code: 20000, tasks: [{ id, status_code: 20100, status_message: "Task Created.", cost, path: ["v3", "business_data"] }] });
+const pending = () => Response.json({ status_code: 20000, tasks: [{ status_code: 40602, status_message: "Task In Queue.", path: ["v3"] }] });
+const collected = (result: Record<string, unknown>) => Response.json({ status_code: 20000, tasks: [{ status_code: 20000, cost: 0, path: ["v3"], result: [result] }] });
+const us = { locationCode: 2840, languageCode: "en" };
+
+test("reviews post one billed task, poll for free and trim rows to OpenSEO's fields", async () => {
+  let polls = 0;
+  const { result, requests } = await withFetch((url) => {
+    if (url.endsWith("/reviews/task_post")) return posted("t-1");
+    polls += 1;
+    return polls < 2 ? pending() : collected({ title: "Little Charli", reviews_count: 885, rating: { value: 4.9 }, cid: "123", items: [{ rating: { value: 5 }, review_text: "Great", profile_name: "Ann", owner_answer: null, profile_image_url: "https://img", xpath: "//x" }] });
+  }, () => localReviews({ cid: "123", ...us, depth: 20, sortBy: "newest", includeOtherSources: false, pollIntervalMs: 0 }));
+  assert.deepEqual(sent(requests[0]), { cid: "123", location_code: 2840, language_code: "en", depth: 20, sort_by: "newest", priority: 2 });
+  assert.equal(requests[1].url, `${api}/business_data/google/reviews/task_get/t-1`);
+  assert.deepEqual([result.status, result.taskId, result.costUsd], ["completed", "google:t-1", 0.00375], "only the post is billed");
+  assert.ok(result.status === "completed");
+  assert.deepEqual(result.reviews, [{ rating: { value: 5 }, review_text: "Great", profile_name: "Ann", owner_answer: null }]);
+  assert.deepEqual(result.totals, { title: "Little Charli", reviews_count: 885, rating: { value: 4.9 }, cid: "123", place_id: null });
+});
+
+test("a billed task post is never retried, and a failed collection keeps the task id", async () => {
+  const failedPost = await withFetch(() => new Response("", { status: 500 }), () => assert.rejects(localReviews({ cid: "1", ...us, depth: 20, sortBy: "newest", includeOtherSources: false, pollIntervalMs: 0 }), /HTTP 500/));
+  assert.equal(failedPost.requests.length, 1, "a 5xx does not prove the post was not charged");
+  await withFetch((url) => (url.endsWith("task_post") ? posted("t-2") : Response.json({ status_code: 20000, tasks: [{ status_code: 50000, status_message: "Internal Error.", path: ["v3"] }] })), () => assert.rejects(
+    localReviews({ cid: "1", ...us, depth: 20, sortBy: "newest", includeOtherSources: false, pollIntervalMs: 0 }),
+    (error: unknown) => error instanceof OperationError && error.kind === "provider" && /call again with taskId "google:t-2" at no extra cost/.test(error.message),
+  ));
+});
+
+test("a task still queued comes back as processing and resumes by task id at no cost", async () => {
+  const first = await withFetch((url) => (url.endsWith("task_post") ? posted("t-3", 0.0075) : pending()), () => localReviews({ placeId: "ChIJ", ...us, depth: 40, sortBy: "newest", includeOtherSources: true, pollIntervalMs: 0 }));
+  assert.equal(first.requests[0].url, `${api}/business_data/google/extended_reviews/task_post`);
+  assert.equal("sort_by" in sent(first.requests[0]), false, "the extended endpoint has no sort");
+  assert.deepEqual([first.result.status, first.result.taskId, first.requests.length], ["processing", "extended:t-3", 1 + 6]);
+  const resumed = await withFetch(() => collected({ items: [] }), () => localReviews({ ...us, taskId: "extended:t-3", depth: 20, sortBy: "newest", includeOtherSources: false, pollIntervalMs: 0 }));
+  assert.deepEqual([resumed.requests[0].url, resumed.result.status, resumed.result.costUsd], [`${api}/business_data/google/extended_reviews/task_get/t-3`, "completed", 0]);
+  await withFetch(() => assert.fail("no call"), () => assert.rejects(localReviews({ ...us, taskId: "t-3", depth: 20, sortBy: "newest", includeOtherSources: false }), isInput(/taskId must be the value/)));
+});
+
+test("posts use the business keyword prefix, trim rows and refuse a reviews task id", async () => {
+  const { result, requests } = await withFetch((url) => (url.endsWith("task_post") ? posted("p-1") : collected({ items: [{ post_text: "New menu", post_date: "2026-09-01", images_url: ["x"], url: "https://g.page/p" }] })), () => localPosts({ cid: "123", ...us, depth: 10, pollIntervalMs: 0 }));
+  assert.deepEqual([requests[0].url, sent(requests[0])], [`${api}/business_data/google/my_business_updates/task_post`, { keyword: "cid:123", location_code: 2840, language_code: "en", depth: 10, priority: 2 }]);
+  assert.ok(result.status === "completed");
+  assert.deepEqual([result.status, result.taskId, result.updates], ["completed", "p-1", [{ post_date: "2026-09-01", post_text: "New menu", url: "https://g.page/p" }]]);
+  await withFetch(() => assert.fail("no call"), () => assert.rejects(localPosts({ ...us, taskId: "google:t-1", depth: 10 }), isInput(/looks like a reviews taskId/)));
 });
 
 test("local commands validate their options with the input exit code", async () => {

@@ -4,7 +4,7 @@ import { OperationError } from "./errors.js";
 import { backlinksDomains, backlinksLinks, backlinksOverview, backlinksPages, domainRatings } from "./backlinks.js";
 import { domainOverview, domainPages, rankedKeywords, serpCompetitors } from "./domain.js";
 import { keywordMetrics, researchKeywords, serpResults } from "./keywords.js";
-import { localBusinesses, localCategories, localProfile, localQuestions, localRankGrid, localSerp } from "./local.js";
+import { localBusinesses, localCategories, localPosts, localProfile, localQuestions, localRankGrid, localReviews, localSerp } from "./local.js";
 import { languageForCall, marketForCall, marketForNewProject } from "./market.js";
 import { RESEARCH_SCOPES, type ResearchScope } from "./openseo/researchScope.js";
 import { deleteTagCommand, exportCommand, listCommand, refreshCommand, removeCommand, renameTagCommand, saveCommand, tagCommand, type SavedFilters } from "./saved.js";
@@ -62,6 +62,9 @@ const usage = `Usage:
   agenticseo local questions BUSINESS --near LAT,LNG --radius KM [--depth 1-100] [--language CODE] [--project DIR]
   agenticseo local grid "QUERY" --center LAT,LNG TARGET [--size 3|5] [--spacing KM] [--zoom 4-18]
       [--device mobile|desktop] [--language CODE] [--project DIR]
+  agenticseo local reviews (BUSINESS [--near LAT,LNG [--radius KM]] [MARKET] [--depth 10-200]
+      [--sort newest|highest_rating|lowest_rating|relevant] [--other-sources] | --task-id ID) [--project DIR]
+  agenticseo local posts (BUSINESS [--near LAT,LNG [--radius KM]] [MARKET] [--depth 10-100] | --task-id ID) [--project DIR]
 BUSINESS is one of --name TEXT, --cid ID or --place-id ID; TARGET is any of --cid, --place-id or --name
   agenticseo query "SELECT ..." [--project DIR]
 MARKET overrides the project's market for one call: --location US|2840 [--language en]
@@ -535,6 +538,28 @@ async function run([command, ...args]: string[]): Promise<unknown> {
       // The fields OpenSEO's get_business_profile prints; the full record is in the evidence.
       const fields = ["title", "category", "additional_categories", "rating", "rating_distribution", "address", "phone", "url", "domain", "is_claimed", "work_time", "total_photos", "cid", "place_id", "check_url"];
       result = { ...profileResult, request: { ...business, near, radiusKm, market }, found: profile != null, profileSummary: profile && Object.fromEntries(fields.filter((field) => field in profile).map((field) => [field, profile[field]])) };
+    } else if (action === "reviews" || action === "posts") {
+      const taskId = option(args, "--task-id");
+      const near = coordinateOption(args, "--near");
+      const radiusKm = numberOption(args, "--radius");
+      if (radiusKm !== undefined && !near) throw new OperationError("input", "--radius needs --near");
+      const business = businessOptions(args);
+      const market = marketForCall(project, { location: option(args, "--location"), language: option(args, "--language") });
+      const common = { ...business, near: near && { ...near, radiusKm }, ...market, taskId };
+      if (action === "reviews") {
+        const input = {
+          ...common,
+          depth: intOption(args, "--depth", 10, 200) ?? 20,
+          sortBy: enumOption(args, "--sort", ["newest", "highest_rating", "lowest_rating", "relevant"] as const) ?? "newest",
+          includeOtherSources: flag(args, "--other-sources"),
+        };
+        rejectUnknown(args);
+        result = { request: input, ...(await localReviews(input)) };
+      } else {
+        const input = { ...common, depth: intOption(args, "--depth", 10, 100) ?? 10 };
+        rejectUnknown(args);
+        result = { request: input, ...(await localPosts(input)) };
+      }
     } else if (action === "questions") {
       const near = coordinateOption(args, "--near");
       const radiusKm = numberOption(args, "--radius");

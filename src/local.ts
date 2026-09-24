@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { OperationError } from "./errors.js";
 import { buildCacheKey, createFileCache } from "./openseo/cache.js";
-import { fetchBusinessListingsCategories } from "./openseo/dataforseo/business.js";
+import { fetchBusinessListingsCategories, type BusinessTaskEndpoint } from "./openseo/dataforseo/business.js";
 import { createDataforseoClient, ledgerCost, type ProviderCall } from "./openseo/dataforseo/client.js";
 import {
   businessDataNearSchema,
@@ -14,6 +14,12 @@ import {
 } from "./openseo/mcp/local-seo-shared.js";
 import {
   BUSINESS_CATEGORIES_CACHE_NAMESPACE,
+  BUSINESS_UPDATE_ROW_FIELDS,
+  encodeReviewsTaskId,
+  parseReviewsTaskId,
+  pollBusinessTask,
+  resultItems,
+  REVIEW_ROW_FIELDS,
   BUSINESS_CATEGORIES_TTL_SECONDS,
   buildRankGridPoints,
   cachedCategoriesSchema,
@@ -223,4 +229,89 @@ export async function localRankGrid(input: z.input<typeof localRankGridInputSche
     top10Count: ranks.filter((rank) => rank <= 10).length,
   };
   return done({ keyword: args.keyword, gridSize, spacingKm, zoom, depthChecked: RANK_GRID_DEPTH, grid, summary, matchedBusiness });
+}
+
+type BusinessLocation = { near?: { latitude: number; longitude: number; radiusKm?: number }; locationCode: number; languageCode: string };
+
+function businessLocation(input: BusinessLocation) {
+  const near = input.near && check(businessDataNearSchema, input.near, "--near/--radius");
+  return resolveBusinessLocation({ near, locationCode: input.locationCode, languageCode: input.languageCode }, input);
+}
+
+/**
+ * OpenSEO's get_business_reviews. Posting the task is billed; collection polls for free.
+ * A task still running after the poll window comes back as "processing" with a taskId
+ * that a later call passes back to collect it at no extra cost.
+ */
+export async function localReviews(
+  input: Identifier & BusinessLocation & {
+    depth: number;
+    sortBy: "newest" | "highest_rating" | "lowest_rating" | "relevant";
+    includeOtherSources: boolean;
+    taskId?: string;
+    pollIntervalMs?: number;
+  },
+) {
+  const { client, done } = metered();
+  let task: { endpoint: BusinessTaskEndpoint; taskId: string };
+  let publicTaskId: string;
+  if (input.taskId) {
+    task = parseReviewsTaskId(input.taskId);
+    publicTaskId = input.taskId;
+  } else {
+    const identifier = resolveBusinessIdentifier(input);
+    check(z.object({ depth: z.number().int().min(10).max(200) }), input, "--depth");
+    // Only the post is metered; the polling below collects for free.
+    const postedId = await client.business.reviewsTaskPost({
+      ...identifier,
+      ...businessLocation(input),
+      depth: input.depth,
+      // The fetcher's extended branch has no sort_by and ignores this.
+      sortBy: input.sortBy,
+      includeOtherSources: input.includeOtherSources,
+    });
+    task = { endpoint: input.includeOtherSources ? "extended_reviews" : "reviews", taskId: postedId };
+    publicTaskId = encodeReviewsTaskId(input.includeOtherSources, postedId);
+  }
+
+  const outcome = await pollBusinessTask(task, publicTaskId, input.pollIntervalMs);
+  if (outcome.status === "pending") return done({ status: "processing" as const, taskId: publicTaskId });
+  const totals = outcome.result
+    ? {
+        title: outcome.result.title ?? null,
+        reviews_count: outcome.result.reviews_count ?? null,
+        rating: outcome.result.rating ?? null,
+        cid: outcome.result.cid ?? null,
+        place_id: outcome.result.place_id ?? null,
+      }
+    : null;
+  return done({
+    status: "completed" as const,
+    taskId: publicTaskId,
+    reviews: resultItems(outcome.result).map((row) => pickRowFields(row, REVIEW_ROW_FIELDS)),
+    totals,
+  });
+}
+
+/** OpenSEO's get_business_updates: a profile's posts, through the same billed task queue. */
+export async function localPosts(input: Identifier & BusinessLocation & { depth: number; taskId?: string; pollIntervalMs?: number }) {
+  const { client, done } = metered();
+  let taskId: string;
+  if (input.taskId) {
+    if (input.taskId.includes(":")) {
+      throw new AppError("VALIDATION_ERROR", "That looks like a reviews taskId; pass the bare taskId `local posts` returned.");
+    }
+    taskId = input.taskId;
+  } else {
+    const identifier = resolveBusinessIdentifier(input);
+    check(z.object({ depth: z.number().int().min(10).max(100) }), input, "--depth");
+    taskId = await client.business.updatesTaskPost({
+      keyword: businessIdentifierKeyword(identifier),
+      ...businessLocation(input),
+      depth: input.depth,
+    });
+  }
+  const outcome = await pollBusinessTask({ endpoint: "my_business_updates", taskId }, taskId, input.pollIntervalMs);
+  if (outcome.status === "pending") return done({ status: "processing" as const, taskId });
+  return done({ status: "completed" as const, taskId, updates: resultItems(outcome.result).map((row) => pickRowFields(row, BUSINESS_UPDATE_ROW_FIELDS)) });
 }

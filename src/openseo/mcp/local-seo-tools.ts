@@ -1,10 +1,18 @@
 // Ported from OpenSEO src/server/mcp/tools/local-seo-tools.ts at commit
-// 0ffff93101043aad7600a3b6a499a0cd2887ef49 (business location, category cache and local rank
-// grid helpers and the rank grid input schema; the handlers live in src/local.ts).
-// Local change: the grid schema omits projectId and languageCode, which the CLI
-// resolves from the project.
+// 0ffff93101043aad7600a3b6a499a0cd2887ef49 (business location, task polling, review and post
+// field lists, category cache and local rank grid helpers and the rank grid input schema;
+// the handlers live in src/local.ts).
+// Local changes: the grid schema omits projectId and languageCode, which the CLI
+// resolves from the project; pollBusinessTask takes the poll interval as a
+// parameter (default upstream's 4 s) so tests need not wait.
 // Copyright (c) 2026 Ben Senescu. MIT License; see LICENSES/OpenSEO.txt.
 import { z } from "zod";
+import {
+  fetchBusinessDataTaskResult,
+  type BusinessTaskEndpoint,
+  type BusinessTaskOutcome,
+} from "../dataforseo/business.js";
+import { AppError } from "../platform.js";
 import {
   formatBusinessDataCoordinate,
   readPath,
@@ -223,3 +231,94 @@ export const localRankGridInputSchema = z.object({
       "Map zoom every point is searched at. Defaults to a zoom derived from spacingKm and latitude so each point's viewport spans the grid spacing; override only when you need a specific viewport.",
     ),
 });
+
+// DataForSEO queues these tasks; high priority normally settles them inside the
+// poll window, and the tool hands back a resumable taskId when it doesn't.
+export const TASK_POLL_ATTEMPTS = 6;
+export const TASK_POLL_INTERVAL_MS = 4000;
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function pollBusinessTask(
+  input: { endpoint: BusinessTaskEndpoint; taskId: string },
+  publicTaskId: string,
+  intervalMs = TASK_POLL_INTERVAL_MS,
+): Promise<BusinessTaskOutcome> {
+  try {
+    for (let attempt = 0; attempt < TASK_POLL_ATTEMPTS; attempt++) {
+      if (attempt > 0) await wait(intervalMs);
+      const outcome = await fetchBusinessDataTaskResult(input);
+      if (outcome.status === "completed") return outcome;
+    }
+    return { status: "pending", result: null };
+  } catch (error) {
+    // The task was already paid for at post; don't let a collection failure
+    // discard the only handle to it.
+    if (error instanceof AppError) {
+      throw new AppError(
+        error.code,
+        `${error.message} The queued task is still collectable — call again with taskId "${publicTaskId}" at no extra cost.`,
+      );
+    }
+    throw error;
+  }
+}
+
+const REVIEWS_TASK_ID_PATTERN = /^(google|extended):(.+)$/;
+
+export function encodeReviewsTaskId(includeOtherSources: boolean, id: string): string {
+  return `${includeOtherSources ? "extended" : "google"}:${id}`;
+}
+
+export function parseReviewsTaskId(taskId: string): {
+  endpoint: BusinessTaskEndpoint;
+  taskId: string;
+} {
+  const match = REVIEWS_TASK_ID_PATTERN.exec(taskId);
+  if (!match) {
+    throw new AppError(
+      "VALIDATION_ERROR",
+      'taskId must be the value this tool returned, formatted as "google:<id>" or "extended:<id>".',
+    );
+  }
+  return {
+    endpoint: match[1] === "extended" ? "extended_reviews" : "reviews",
+    taskId: match[2] ?? "",
+  };
+}
+
+// Full review rows carry ~200-char base64 review URLs, avatar URLs, and
+// xpaths; the fields below are what review-gap analysis actually reads.
+export const REVIEW_ROW_FIELDS = [
+  "rank_absolute",
+  "time_ago",
+  "timestamp",
+  "rating",
+  "review_text",
+  "original_review_text",
+  "original_language",
+  "profile_name",
+  "local_guide",
+  "reviews_count",
+  "photos_count",
+  "review_highlights",
+  "source",
+  "owner_answer",
+  "owner_time_ago",
+  "owner_timestamp",
+  "review_id",
+] as const;
+
+// Post rows ship image CDN URLs and xpaths nothing downstream reads.
+export const BUSINESS_UPDATE_ROW_FIELDS = [
+  "rank_absolute",
+  "author",
+  "post_date",
+  "timestamp",
+  "post_text",
+  "snippet",
+  "url",
+  "links",
+] as const;
