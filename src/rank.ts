@@ -1,7 +1,8 @@
 import { OperationError } from "./errors.js";
 import { createFileCache } from "./openseo/cache.js";
 import { createDataforseoClient, ledgerCost, type ProviderCall } from "./openseo/dataforseo/client.js";
-import { closeDeadRuns, runLiveCheck } from "./openseo/rank-tracking/rankCheck.js";
+import { closeDeadRuns, interruptedRuns, runLiveCheck } from "./openseo/rank-tracking/rankCheck.js";
+import { runDueChecks } from "./openseo/rank-tracking/scheduledRankChecks.js";
 import { getConfigTrend, getKeywordHistory, getLatestResults, getPositionMatrix, type ComparePeriod } from "./openseo/rank-tracking/rankTrackingResults.js";
 import { fetchSerpLocationsForCountry } from "./openseo/dataforseo/serp-locations.js";
 import {
@@ -18,7 +19,8 @@ import {
   type ScheduleInterval,
 } from "./openseo/rank-tracking/RankTrackingService.js";
 import { rankSerpLocations } from "./openseo/shared/serp-location-search.js";
-import { cacheDirectory } from "./project.js";
+import { join } from "node:path";
+import { cacheDirectory, dataDirectory } from "./project.js";
 import { withStore } from "./store.js";
 
 export type TrackerSettings = { devices?: Devices; serpDepth?: number; scheduleInterval?: ScheduleInterval };
@@ -52,9 +54,11 @@ export async function showTracker(root: string, trackerId: string, comparePeriod
   return withStore(root, (db) => {
     closeDeadRuns(db, trackerId);
     const { config, rows, run, comparePeriod: period } = getLatestResults(db, trackerId, comparePeriod);
+    const interrupted = run !== null && interruptedRuns(db).some((candidate) => candidate.id === run.id);
     return {
       tracker: config,
-      latestRun: run,
+      // A scheduled run interrupted after paying for queued tasks waits for `rank due` to collect them.
+      latestRun: run && (interrupted ? { ...run, status: "interrupted", next: "agenticseo rank due" } : run),
       comparePeriod: period,
       keywords: rows.map(({ desktop, mobile, ...row }) => ({
         ...row,
@@ -120,4 +124,29 @@ export async function searchLocations(root: string, query: string, countryCode: 
     locationType: location.locationType,
   }));
   return { query, countryCode, locations };
+}
+
+/** The scheduler entry point: see runDueChecks. */
+export async function rankDue(root: string) {
+  return withStore(root, (db) => runDueChecks(db));
+}
+
+/**
+ * The crontab line that runs `rank due` hourly for this project. Printed, never
+ * installed: the user or agent adds it, and decides how the key reaches cron.
+ */
+export async function scheduleLine(root: string) {
+  const log = join(await dataDirectory(root), "rank-due.log");
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+  const command = [process.execPath, ...process.execArgv, process.argv[1]].map(quote).join(" ");
+  const minute = Math.floor(Math.random() * 60);
+  return {
+    cron: `${minute} * * * * cd ${quote(root)} && ${command} rank due >> ${quote(log)} 2>&1`,
+    log,
+    notes: [
+      "Add the line with `crontab -e` (macOS and Linux). On Windows, create an hourly Task Scheduler task that runs the same command in the project directory.",
+      "Cron does not read your shell profile: DATAFORSEO_API_KEY must be defined for the job, for example as a DATAFORSEO_API_KEY=... line above it in the crontab. AgenticSEO does not store the key.",
+      "Each call checks every tracker that is due and finishes interrupted scheduled checks; an hourly call is enough for daily, weekly and monthly schedules.",
+    ],
+  };
 }

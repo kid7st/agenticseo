@@ -24,7 +24,7 @@ import { getKeywordsForConfig, type RankTrackingConfig } from "./RankTrackingSer
 type KeywordEntry = { id: string; keyword: string };
 type RankCheckResultWithDevice = RankCheckResult & { device: "desktop" | "mobile" };
 
-type RunRow = {
+export type RunRow = {
   id: string;
   config_id: string;
   status: "running" | "completed" | "failed";
@@ -52,13 +52,19 @@ function claim(db: Store, runId: string) {
 const checkedKeywordCount = (db: Store, runId: string) =>
   (db.prepare(`SELECT COUNT(DISTINCT tracking_keyword_id) AS n FROM rank_snapshots WHERE run_id = ?`).get(runId) as { n: number }).n;
 
+// Queued tasks of a run that have no snapshot yet: paid for, still to be collected.
+const UNCOLLECTED_TASKS = `EXISTS (SELECT 1 FROM rank_check_tasks t WHERE t.run_id = r.id AND NOT EXISTS (
+  SELECT 1 FROM rank_snapshots s WHERE s.run_id = t.run_id AND s.tracking_keyword_id = t.tracking_keyword_id AND s.device = t.device))`;
+
 /**
  * Close running checks whose process is gone, freeing the tracker for a new run.
  * Snapshots they already paid for stay visible: such a run completes with a note.
+ * A scheduled run with queued tasks still to collect is left for `rank due`,
+ * which collects them instead of paying again.
  */
 export function closeDeadRuns(db: Store, configId?: string) {
   const running = db
-    .prepare(`SELECT * FROM rank_check_runs WHERE status = 'running' AND (? IS NULL OR config_id = ?)`)
+    .prepare(`SELECT * FROM rank_check_runs r WHERE status = 'running' AND (? IS NULL OR config_id = ?) AND NOT ${UNCOLLECTED_TASKS}`)
     .all(configId ?? null, configId ?? null) as RunRow[];
   for (const run of running.filter((candidate) => !workerAlive(candidate))) {
     const checked = checkedKeywordCount(db, run.id);
@@ -75,11 +81,28 @@ export function closeDeadRuns(db: Store, configId?: string) {
   }
 }
 
+/** Dead scheduled runs whose paid queued tasks are still to be collected. */
+export function interruptedRuns(db: Store) {
+  const rows = db.prepare(`SELECT * FROM rank_check_runs r WHERE status = 'running' AND ${UNCOLLECTED_TASKS}`).all() as RunRow[];
+  return rows.filter((row) => !workerAlive(row));
+}
+
+/** Take over a dead run; the heartbeat it was seen with is the compare-and-set token. */
+export function adoptRun(db: Store, run: RunRow) {
+  return (
+    db
+      .prepare(`UPDATE rank_check_runs SET worker_pid = ?, heartbeat_at = ? WHERE id = ? AND status = 'running' AND heartbeat_at IS ?`)
+      .run(process.pid, new Date().toISOString(), run.id, run.heartbeat_at).changes > 0
+  );
+}
+
+export type BeginRunResult = { ok: true; runId: string; keywords: KeywordEntry[] } | { ok: false; blockingRunId: string; blockingProcess: number | null };
+
 /**
  * Start a run: at most one running check per tracker, enforced by the partial
  * unique index on rank_check_runs, after closing a blocker whose process died.
  */
-export function beginRun(db: Store, config: RankTrackingConfig, input: { trigger: "manual" | "scheduled"; keywordIds?: string[] }) {
+export function beginRun(db: Store, config: RankTrackingConfig, input: { trigger: "manual" | "scheduled"; keywordIds?: string[] }): BeginRunResult {
   return transaction(db, () => {
     closeDeadRuns(db, config.id);
     let keywords: KeywordEntry[] = getKeywordsForConfig(db, config.id);
@@ -95,15 +118,13 @@ export function beginRun(db: Store, config: RankTrackingConfig, input: { trigger
     const blocker = db.prepare(`SELECT id, worker_pid FROM rank_check_runs WHERE config_id = ? AND status = 'running'`).get(config.id) as
       | { id: string; worker_pid: number | null }
       | undefined;
-    if (blocker) {
-      throw new AppError("VALIDATION_ERROR", `A rank check is already running for tracker ${config.id} (run ${blocker.id}, process ${blocker.worker_pid ?? "unknown"})`);
-    }
+    if (blocker) return { ok: false, blockingRunId: blocker.id, blockingProcess: blocker.worker_pid };
     const runId = randomUUID();
     const now = new Date().toISOString();
     db.prepare(
       `INSERT INTO rank_check_runs (id, config_id, status, trigger, keywords_total, is_subset_run, worker_pid, heartbeat_at, started_at) VALUES (?, ?, 'running', ?, ?, ?, ?, ?, ?)`,
     ).run(runId, config.id, input.trigger, keywords.length, input.keywordIds?.length ? 1 : 0, process.pid, now, now);
-    return { runId, keywords: keywords.map((kw) => ({ id: kw.id, keyword: kw.keyword })) };
+    return { ok: true, runId, keywords: keywords.map((kw) => ({ id: kw.id, keyword: kw.keyword })) };
   });
 }
 
@@ -120,6 +141,10 @@ export class RunLedger {
   readonly client = createDataforseoClient(this.calls);
   charged(error: unknown) {
     if (error instanceof DataforseoChargedTaskError) this.chargedFailuresUsd += error.billing.costUsd;
+  }
+  /** Cost an adopted run already recorded before it was interrupted. */
+  carryOver(costUsd: number) {
+    this.chargedFailuresUsd += costUsd;
   }
   get costUsd() {
     return Math.round((ledgerCost(this.calls) + this.chargedFailuresUsd) * 1e6) / 1e6;
@@ -251,7 +276,17 @@ export async function withHeartbeat<T>(db: Store, runId: string, work: () => Pro
  * batch, snapshots saved per batch so partial results survive a failure.
  */
 export async function runLiveCheck(db: Store, config: RankTrackingConfig, input: { keywordIds?: string[] }) {
-  const { runId, keywords } = beginRun(db, config, { trigger: "manual", keywordIds: input.keywordIds });
+  const begun = beginRun(db, config, { trigger: "manual", keywordIds: input.keywordIds });
+  if (!begun.ok) {
+    const interrupted = interruptedRuns(db).some((run) => run.id === begun.blockingRunId);
+    throw new AppError(
+      "VALIDATION_ERROR",
+      interrupted
+        ? `Scheduled run ${begun.blockingRunId} for tracker ${config.id} was interrupted with paid tasks to collect; run agenticseo rank due to finish it`
+        : `A rank check is already running for tracker ${config.id} (run ${begun.blockingRunId}, process ${begun.blockingProcess ?? "unknown"})`,
+    );
+  }
+  const { runId, keywords } = begun;
   const ledger = new RunLedger();
   let stop: unknown = null;
   await closeOnFailure(db, runId, config.id, () =>

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { OperationError } from "../src/errors.js";
+import { runDueChecks } from "../src/openseo/rank-tracking/scheduledRankChecks.js";
 import { withStore, type Store } from "../src/store.js";
 import { readFileSync } from "node:fs";
 import {
@@ -285,6 +286,152 @@ describe("rank checks", () => {
       assert.deepEqual([result.updated, result.missingKeywords, result.costUsd], [1, ["unknown term"], 0.01]);
       const shown = await showTracker(root, config.id);
       assert.deepEqual([shown.keywords[0].searchVolume, shown.keywords[0].keywordDifficulty, shown.keywords[0].cpc], [1200, 35, 2.5]);
+    });
+  });
+});
+
+const api = "https://api.dataforseo.com/v3/serp/google/organic";
+
+/**
+ * A DataForSEO stand-in for the queued path. `queue` maps a keyword to its
+ * task_get outcomes in order ("pending", "failed" or a position); "reject" keywords
+ * are refused at task_post; live checks answer from `live`.
+ */
+function queueHandler(input: { queue: Record<string, Array<"pending" | "failed" | number>>; reject?: string[]; live?: Record<string, number | null> }) {
+  const outcomes = new Map(Object.entries(input.queue).map(([keyword, list]) => [keyword, [...list]]));
+  return (url: string, init: RequestInit) => {
+    if (url === `${api}/task_post`) {
+      const tasks = JSON.parse(String(init.body)) as Array<{ keyword: string; tag: string }>;
+      return Response.json({
+        status_code: 20000,
+        tasks: tasks.map((task) =>
+          input.reject?.includes(task.keyword)
+            ? { status_code: 40501, status_message: "Invalid Field: 'keyword'.", cost: 0 }
+            : { id: `task-${task.keyword}`, status_code: 20100, status_message: "Task Created.", cost: 0.0024, data: { tag: task.tag } },
+        ),
+      });
+    }
+    if (url.startsWith(`${api}/task_get/advanced/`)) {
+      const keyword = decodeURIComponent(url.slice(`${api}/task_get/advanced/task-`.length));
+      const next = outcomes.get(keyword)?.shift();
+      if (next === undefined) throw new Error(`Unexpected task_get for ${keyword}`);
+      if (next === "pending") return Response.json({ status_code: 20000, tasks: [{ id: `task-${keyword}`, status_code: 40602, status_message: "Task In Queue." }] });
+      if (next === "failed") return Response.json({ status_code: 20000, tasks: [{ id: `task-${keyword}`, status_code: 40000, status_message: "Task failed in queue." }] });
+      return Response.json({ status_code: 20000, tasks: [{ id: `task-${keyword}`, status_code: 20000, result: [{ items: [organic(next, "example.com")] }] }] });
+    }
+    return serpHandler(input.live ?? {})(url, init);
+  };
+}
+
+const makeDue = (root: string, trackerId: string) =>
+  withDb(root, (db) => db.prepare(`UPDATE rank_tracking_configs SET next_check_at = ? WHERE id = ?`).run(new Date(Date.now() - 3_600_000).toISOString(), trackerId));
+
+const due = (root: string) => withDb(root, (db) => runDueChecks(db, { pollIntervalsMs: [0, 0] }));
+
+describe("scheduled rank checks", () => {
+  it("queues due trackers, polls, falls back live for stragglers, and advances the schedule once", async () => {
+    await withProject(async (root) => {
+      const { config } = await createTracker(root, { ...us, scheduleInterval: "weekly" });
+      await addTrackerKeywords(root, config.id, ["alpha", "beta", "gamma", "delta"], false);
+      await makeDue(root, config.id);
+      const before = (await showTracker(root, config.id)).tracker.nextCheckAt!;
+
+      const { result, requests } = await withFetch(queueHandler({ queue: { alpha: ["pending", 5], beta: ["failed"], delta: ["pending", "pending"] }, reject: ["gamma"], live: { beta: 7, gamma: 9, delta: 12 } }), () => due(root));
+      assert.deepEqual([result.due, result.started, result.adopted], [1, 1, 0]);
+      const [run] = result.runs;
+      assert.ok("stats" in run && run.stats);
+      // beta failed in the queue, gamma was rejected at post time, delta never finished.
+      assert.deepEqual(run.stats, { queueTasks: 3, queueCollected: 1, fallbackTasks: 3, fallbackChecked: 3 });
+      assert.equal(run.run.status, "completed");
+      assert.equal(run.run.trigger, "scheduled");
+      assert.equal(run.run.costUsd, 0.0312, "three queued posts at $0.0024 plus three live fallbacks at $0.008");
+      const post = requests.find((request) => request.url === `${api}/task_post`)?.body as Array<Record<string, unknown>>;
+      assert.equal(post.length, 4, "all pairs go in one post");
+      const stored = await withDb(root, (db) => db.prepare(`SELECT task_id FROM rank_check_tasks ORDER BY task_id`).all().map((row) => (row as { task_id: string }).task_id));
+      assert.deepEqual(stored, ["task-alpha", "task-beta", "task-delta"], "accepted task ids are stored, so an interrupted run can collect them");
+      assert.equal(post[0].tag, `${(await showTracker(root, config.id)).keywords[0].trackingKeywordId}:mobile`);
+
+      const shown = await showTracker(root, config.id);
+      assert.deepEqual(shown.keywords.map((kw) => kw.mobile?.position), [5, 7, 9, 12]);
+      assert.ok(Date.parse(shown.tracker.nextCheckAt!) - Date.parse(before) === 7 * 86_400_000, "the next slot is anchored to the missed one");
+
+      const again = await withFetch(() => Response.error(), () => due(root));
+      assert.deepEqual([again.result.due, again.result.started, again.requests.length], [0, 0, 0], "a repeated call starts nothing");
+    });
+  });
+
+  it("skips a due tracker with no keywords and records why", async () => {
+    await withProject(async (root) => {
+      const { config } = await createTracker(root, { ...us, scheduleInterval: "daily" });
+      await makeDue(root, config.id);
+      const result = await due(root);
+      assert.deepEqual(result.skipped, [{ trackerId: config.id, reason: "no_keywords" }]);
+      const tracker = (await showTracker(root, config.id)).tracker;
+      assert.equal(tracker.lastSkipReason, "no_keywords");
+      assert.ok(Date.parse(tracker.nextCheckAt!) > Date.now());
+    });
+  });
+
+  it("adopts an interrupted scheduled run and collects its paid tasks without posting again", async () => {
+    await withProject(async (root) => {
+      const { config } = await createTracker(root, { ...us, scheduleInterval: "weekly" });
+      const { addedIds } = await addTrackerKeywords(root, config.id, ["alpha", "beta"], false);
+      const long = new Date(Date.now() - 3_600_000).toISOString();
+      await withDb(root, (db) => {
+        db.prepare(`INSERT INTO rank_check_runs (id, config_id, status, trigger, keywords_total, cost_usd, worker_pid, heartbeat_at, started_at) VALUES ('queued', ?, 'running', 'scheduled', 2, 0.0048, 2147483646, ?, ?)`).run(config.id, long, long);
+        const task = db.prepare(`INSERT INTO rank_check_tasks (run_id, tracking_keyword_id, keyword, device, task_id, posted_at) VALUES ('queued', ?, ?, 'mobile', ?, ?)`);
+        task.run(addedIds[0], "alpha", "task-alpha", long);
+        task.run(addedIds[1], "beta", "task-beta", long);
+      });
+
+      const shown = await showTracker(root, config.id);
+      assert.equal(shown.latestRun?.status, "interrupted", "a dead run with paid tasks is not closed by other commands");
+      await assert.rejects(runTracker(root, config.id), rejectsInput(/interrupted with paid tasks to collect; run agenticseo rank due/));
+
+      const { result, requests } = await withFetch(queueHandler({ queue: { alpha: [3], beta: [11] } }), () => due(root));
+      assert.equal(result.adopted, 1);
+      assert.ok(requests.every((request) => request.url.includes("/task_get/")), "no task is posted or checked live again");
+      const run = result.runs[0];
+      assert.ok("run" in run && run.run);
+      assert.deepEqual([run.run.status, run.run.keywordsChecked, run.run.costUsd], ["completed", 2, 0.0048]);
+      assert.deepEqual((await showTracker(root, config.id)).keywords.map((kw) => kw.mobile?.position), [3, 11]);
+    });
+  });
+
+  it("starts one run when two calls race for the same due tracker", async () => {
+    await withProject(async (root) => {
+      const { config } = await createTracker(root, { ...us, scheduleInterval: "weekly" });
+      await addTrackerKeywords(root, config.id, ["alpha"], false);
+      await makeDue(root, config.id);
+      const { result } = await withFetch(queueHandler({ queue: { alpha: [1] } }), () => Promise.all([due(root), due(root)]));
+      assert.equal(result[0].started + result[1].started, 1);
+      const runs = await withDb(root, (db) => db.prepare(`SELECT COUNT(*) AS n FROM rank_check_runs`).get() as { n: number });
+      assert.equal(runs.n, 1);
+    });
+  });
+
+  it("fails the call on a rejected key and closes the run", async () => {
+    await withProject(async (root) => {
+      const { config } = await createTracker(root, { ...us, scheduleInterval: "weekly" });
+      await addTrackerKeywords(root, config.id, ["alpha"], false);
+      await makeDue(root, config.id);
+      await withFetch(
+        () => new Response("Unauthorized", { status: 401 }),
+        () => assert.rejects(due(root), (error: unknown) => error instanceof OperationError && error.kind === "credentials"),
+      );
+      const shown = await showTracker(root, config.id);
+      assert.equal(shown.latestRun?.status, "failed");
+      assert.match(shown.latestRun?.errorMessage ?? "", /HTTP 401/);
+    });
+  });
+
+  it("prints a crontab line for this project without installing it", async () => {
+    await withProject(async (root) => {
+      const result = runCli(root, ["rank", "schedule"]);
+      assert.equal(result.status, 0, result.stderr);
+      const { cron, notes } = JSON.parse(result.stdout) as { cron: string; notes: string[] };
+      assert.match(cron, /^\d{1,2} \* \* \* \* cd '.+' && '.+node' .+ rank due >> '.+rank-due\.log' 2>&1$/);
+      assert.ok(notes.some((note) => note.includes("DATAFORSEO_API_KEY")));
     });
   });
 });
