@@ -47,7 +47,19 @@ Full SEO capability parity with OpenSEO is the target. The initial baseline is O
 
 - Port tracker configuration, keyword changes, cost estimation, manual runs, queued/provider polling where needed, position history and trend queries.
 - Add idempotent scheduler entry points callable by the OS scheduler, with duplicate-run prevention and explicit failure reporting.
-- Exit: repeated runs produce comparable history, scheduled work survives an interrupted invocation, and provider costs and failures remain visible when available.
+- Exit: repeated runs produce comparable history, scheduled work survives an interrupted invocation, and provider costs and failures remain visible when available. **Complete** (2026-09-24, Pi): asked to track the keywords from its earlier audit report, the agent:
+  - created a tracker, added six keywords and estimated the cost;
+  - ran a live check ($0.086) and reported the positions against the audit's historical ranks;
+  - switched the tracker to weekly;
+  - gave the crontab line from `rank schedule` without changing the system.
+
+  It priced the weekly check from the live run, because the tracker was manual when it asked for the estimate. Creating or updating a scheduled tracker now returns its recurring estimate.
+
+  A second check of the same tracker through `rank due` ($0.056: six queued tasks, one live fallback) completed. `rank show` compared the two runs, and `rank trend` and `rank matrix` listed both. Two keywords that ranked #24 and #38 in the live check were outside the top 100 in the queued check 20 minutes later; their raw task results confirm this, so it reflects Google's variation, not the parser.
+
+  Interruption was verified live: a `rank due` killed after posting its tasks was adopted by the next call, which collected both paid tasks and paid nothing more.
+
+  Costs are recorded per run. DataForSEO charged more than OpenSEO's price table: $0.008 against $0.0065 for a four-page live check, and $0.0024 against $0.00195 for a queued task. Estimates stay nominal.
 
 ## Phase 5 — First-party Google data and AI visibility
 

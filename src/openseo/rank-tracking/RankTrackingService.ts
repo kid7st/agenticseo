@@ -8,7 +8,8 @@
 // approvals and telemetry are dropped; keywords over the per-tracker limit and
 // unknown keyword ids are reported instead of silently skipped; a location name
 // the DataForSEO sandbox could not check is reported with the reason; keywords
-// with no metrics are listed in the refresh result.
+// with no metrics are listed in the refresh result; creating or updating a
+// scheduled tracker returns its recurring cost estimate.
 import { randomUUID } from "node:crypto";
 import { transaction, type Store } from "../../store.js";
 import type { DataforseoClient } from "../dataforseo/client.js";
@@ -178,7 +179,21 @@ export async function createConfig(
     ).run(id, domain, input.locationCode, input.languageCode, locationName, input.devices, input.serpDepth, input.scheduleInterval, nextCheckAt, new Date().toISOString());
     return id;
   });
-  return { config: getValidatedConfig(db, configId), ...(warning && { warning }) };
+  return withScheduleCost(db, getValidatedConfig(db, configId), warning);
+}
+
+/**
+ * A tracker's result carries the recurring cost whenever it has a schedule, so the
+ * spend is visible at the moment a schedule is turned on or changed.
+ */
+function withScheduleCost(db: Store, config: RankTrackingConfig, warning: string | null) {
+  return {
+    config,
+    ...(warning && { warning }),
+    ...(isScheduledRankTrackingInterval(config.scheduleInterval) && {
+      scheduledEstimate: estimateScheduledRankCheckCost(keywordCount(db, config.id), config.devices, config.serpDepth, config.scheduleInterval),
+    }),
+  };
 }
 
 export async function updateConfig(
@@ -229,7 +244,7 @@ export async function updateConfig(
     }
     throw error;
   }
-  return { config: getValidatedConfig(db, configId), ...(warning && { warning }) };
+  return withScheduleCost(db, getValidatedConfig(db, configId), warning);
 }
 
 export function addKeywords(db: Store, configId: string, keywords: string[], matchCase = false) {
