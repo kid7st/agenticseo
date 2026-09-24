@@ -40,8 +40,8 @@ Deliver through the `seo-report` skill. If that skill is not available, say so a
 - `agenticseo backlinks overview DOMAIN`: backlink and referring-domain profile.
 - `agenticseo competitors KEYWORD...`: validate whether the named competitor is a real search competitor across the target keyword set.
 - `agenticseo local businesses`, `agenticseo local serp` and `agenticseo local questions`: for local SEO competitors, when Maps or local-pack visibility, nearby businesses, categories or Google Q&A matter.
-- `agenticseo serp "QUERY"`: validate head-to-head SERPs for important keywords, one query per call.
-- `agenticseo research "SEED"`: expand gaps or category terms when needed.
+- `agenticseo serp "QUERY"...`: validate head-to-head SERPs for important keywords, up to 10 queries per call.
+- `agenticseo research "SEED"...`: expand gaps or category terms when needed.
 
 ## Workflow
 

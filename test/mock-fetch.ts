@@ -28,6 +28,10 @@ globalThis.fetch = async (input, init) => {
     if (request[0].keywords?.includes("provider outage")) return new Response("upstream unavailable", { status: 502 });
     return new Response(readFileSync(new URL("./keyword-overview.json", import.meta.url)), { headers: { "Content-Type": "application/json" } });
   }
+  // Bulk commands run each item on its own; these seeds and queries let CLI tests fail one item.
+  const term = (request[0] as { keyword?: string }).keyword;
+  if (term === "provider outage") return new Response("upstream unavailable", { status: 502 });
+  if (term === "rejected key") return new Response("unauthorized", { status: 401 });
   if (url === `${api}/dataforseo_labs/google/related_keywords/live`) {
     const keywords = ["seo audit", "seo audit tool", "free seo audit", "seo audit checklist", "website seo audit", "seo audit report"];
     return task(keywords.map((keyword) => ({ keyword_data: { keyword, keyword_info: { search_volume: 100 } } })), 0.02);

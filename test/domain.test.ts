@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { domainOverview, domainPages, rankedKeywords, serpCompetitors } from "../src/domain.js";
+import { domainKeywords, domainOverview, domainPages, rankedKeywords, serpCompetitors } from "../src/domain.js";
 import { OperationError } from "../src/errors.js";
 import { runCli, withFetch, withProject } from "./helpers.js";
 
@@ -117,6 +117,9 @@ test("domain, ranked and competitors commands validate options with the input ex
       ["ranked", "example.com", "--max-rank", "101"],
       ["competitors"],
       ["competitors", "seo", "--depth", "10"],
+      ["domain-keywords", "example.com", "--min-difficulty", "101"],
+      ["domain-keywords", "example.com", "--sort", "difficulty"],
+      ["domain-keywords", "example.com", "--page-size", "25"],
     ]) {
       const result = runCli(root, args, { env });
       assert.equal(result.status, 2, `${args.join(" ")}: ${result.stderr}`);
@@ -156,6 +159,39 @@ test("domain pages sends OpenSEO's page filters and paging, maps pages and cache
     await withFetch(() => labs([{ page_address: 42 }]), () => assert.rejects(
       domainPages(market, { ...input, page: 3 }),
       (error: unknown) => error instanceof OperationError && error.kind === "provider" && /relevant_pages returned an invalid response shape/.test(error.message),
+    ));
+  });
+});
+
+test("domain keywords sends the app's keyword filters, search and paging, maps rows and caches the page", async () => {
+  await withCache(async (cacheDirectory) => {
+    const input = {
+      target: "example.com", sortMode: "score" as const, sortOrder: "asc" as const, page: 3, pageSize: 50 as const, search: "audit",
+      filters: { include: "seo", minVol: 100, maxCpc: 5, minKd: 10, maxKd: 40, maxRank: 20 }, cacheDirectory,
+    };
+    const item = { keyword_data: { keyword: "seo audit", keyword_info: { search_volume: 1200, cpc: 2.5 }, keyword_properties: { keyword_difficulty: 34 } }, ranked_serp_element: { serp_item: { url: "https://example.com/audit", relative_url: "/audit", rank_absolute: 3, etv: 45.5 } } };
+    const live = await withFetch(() => labs([item], { total_count: 101 }), () => domainKeywords(market, input));
+    assert.equal(live.requests[0].url, `${api}/ranked_keywords/live`);
+    const body = (live.requests[0].body as Array<Record<string, unknown>>)[0];
+    assert.deepEqual([body.target, body.limit, body.offset, body.order_by], ["example.com", 50, 100, ["keyword_data.keyword_properties.keyword_difficulty,asc"]]);
+    assert.deepEqual(JSON.stringify(body.filters), JSON.stringify([
+      ["keyword_data.keyword", "ilike", "%seo%"], "and",
+      ["keyword_data.keyword_info.search_volume", ">=", 100], "and",
+      ["keyword_data.keyword_info.cpc", "<=", 5], "and",
+      ["keyword_data.keyword_properties.keyword_difficulty", ">=", 10], "and",
+      ["keyword_data.keyword_properties.keyword_difficulty", "<=", 40], "and",
+      ["ranked_serp_element.serp_item.rank_absolute", "<=", 20], "and",
+      [["keyword_data.keyword", "ilike", "%audit%"], "or", ["ranked_serp_element.serp_item.url", "ilike", "%audit%"]],
+    ]));
+    assert.equal(live.result.keywords[0].keyword, "seo audit");
+    assert.equal(live.result.keywords[0].keywordDifficulty, 34);
+    assert.deepEqual([live.result.totalCount, live.result.hasMore, live.result.cached], [101, false, false]);
+
+    const again = await withFetch(() => assert.fail("a cached page must not call DataForSEO"), () => domainKeywords(market, input));
+    assert.deepEqual([again.result.cached, again.result.costUsd], [true, 0]);
+    await withFetch(() => assert.fail("must not call DataForSEO"), () => assert.rejects(
+      domainKeywords(market, { ...input, page: 1, filters: { include: "a,b,c,d,e,f,g" } }),
+      /Too many filter conditions \(9 of 8 max\)/,
     ));
   });
 });

@@ -34,9 +34,9 @@ Deliver through the `seo-report` skill. If that skill is not available, say so a
 
 ## Commands
 
-- `agenticseo research "SEED"`: discover representative market queries, one seed per call.
+- `agenticseo research "SEED"...`: discover representative market queries, up to 5 seeds per call.
 - `agenticseo keywords TERM...`: validate a known query set with volume, difficulty, intent and trends.
-- `agenticseo serp "QUERY"`: live SERP composition and ranking URLs, one query per call.
+- `agenticseo serp "QUERY"...`: live SERP composition and ranking URLs, up to 10 queries per call.
 - `agenticseo competitors KEYWORD...`: the domains competing across a keyword set (up to 100 keywords); use this before counting SERPs by hand.
 - `agenticseo domain DOMAIN`: size the organic footprint of candidate leaders.
 - `agenticseo gsc performance`: when the user's own domain is in the comparison and Search Console is connected, anchor their position with first-party clicks, impressions and CTR rather than third-party estimates.

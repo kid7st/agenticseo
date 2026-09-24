@@ -3,7 +3,7 @@
 // Copyright (c) 2026 Ben Senescu. MIT License; see LICENSES/OpenSEO.txt.
 // Local changes: a client ledger and file cache replace the billing customer and
 // R2; organization and project ids leave the cache key; the cache write is
-// awaited; the filters type lists only the fields this view reads.
+// awaited.
 import { z } from "zod";
 import { buildCacheKey, type Cache } from "../cache.js";
 import type { DataforseoClient } from "../dataforseo/client.js";
@@ -16,16 +16,8 @@ import {
 import { assertFilterConditionBudget } from "../dataforseo/filters.js";
 import type { ResearchScope } from "../researchScope.js";
 import { computeHasMore } from "./pagination.js";
+import type { DomainKeywordsFilters } from "./domainKeywordFilters.js";
 
-/** The fields of OpenSEO's DomainKeywordsFilters that the pages view reads. */
-export type DomainKeywordsFilters = {
-  include?: string;
-  exclude?: string;
-  minTraffic?: number;
-  maxTraffic?: number;
-  minVol?: number;
-  maxVol?: number;
-};
 
 const DOMAIN_PAGES_PAGE_TTL_SECONDS = 12 * 60 * 60;
 
