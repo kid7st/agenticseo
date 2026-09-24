@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 import { resolve } from "node:path";
 import { OperationError } from "./errors.js";
+import { auditStatus, resumeAudit, runAuditWorker, startAudit } from "./audit.js";
 import { backlinksDomains, backlinksLinks, backlinksOverview, backlinksPages, domainRatings } from "./backlinks.js";
 import { domainOverview, domainPages, rankedKeywords, serpCompetitors } from "./domain.js";
 import { keywordMetrics, researchKeywords, serpResults } from "./keywords.js";
 import { localBusinesses, localCategories, localPosts, localProfile, localQuestions, localRankGrid, localReviews, localSerp } from "./local.js";
 import { languageForCall, marketForCall, marketForNewProject } from "./market.js";
+import { DEFAULT_AUDIT_PAGES, MIN_AUDIT_PAGES, PAID_MAX_AUDIT_PAGES } from "./openseo/shared/audit-limits.js";
 import { RESEARCH_SCOPES, type ResearchScope } from "./openseo/researchScope.js";
 import { deleteTagCommand, exportCommand, listCommand, refreshCommand, removeCommand, renameTagCommand, saveCommand, tagCommand, type SavedFilters } from "./saved.js";
 import { queryStore, withStore } from "./store.js";
@@ -66,6 +68,9 @@ const usage = `Usage:
       [--sort newest|highest_rating|lowest_rating|relevant] [--other-sources] | --task-id ID) [--project DIR]
   agenticseo local posts (BUSINESS [--near LAT,LNG [--radius KM]] [MARKET] [--depth 10-100] | --task-id ID) [--project DIR]
 BUSINESS is one of --name TEXT, --cid ID or --place-id ID; TARGET is any of --cid, --place-id or --name
+  agenticseo audit start [URL] [--max-pages 10-10000] [--allow-private] [--wait] [--project DIR]
+  agenticseo audit status [ID] [--project DIR]
+  agenticseo audit resume ID [--wait] [--project DIR]
   agenticseo query "SELECT ..." [--project DIR]
 MARKET overrides the project's market for one call: --location US|2840 [--language en]
 FILTERS: --search TEXT --include TERM,... --exclude TERM,... --tags TAG,... --min-volume N --max-volume N
@@ -599,6 +604,36 @@ async function run([command, ...args]: string[]): Promise<unknown> {
     if (Array.isArray(summary.results)) summary.results = summary.results.map((row) => pickFields(row, ["rank_absolute", "rank_group", "title", "domain", "url", "category", "rating", "phone", "address", "is_claimed", "cid", "place_id", "latitude", "longitude"]));
     if (Array.isArray(summary.reviews)) summary.reviews = summary.reviews.map((row) => pickFields(row, ["rank_absolute", "timestamp", "rating", "profile_name", "source", "review_text", "owner_answer"]));
     return { provider: "DataForSEO", fetchedAt, view: `local ${action}`, ...summary, evidence };
+  }
+
+  if (command === "audit") {
+    const [action, ...rest] = args;
+    args = rest;
+    const root = await findProjectRoot(projectOption);
+    if (action === "start") {
+      const input = {
+        maxPages: intOption(args, "--max-pages", MIN_AUDIT_PAGES, PAID_MAX_AUDIT_PAGES) ?? DEFAULT_AUDIT_PAGES,
+        allowPrivate: flag(args, "--allow-private"),
+        wait: flag(args, "--wait"),
+      };
+      const url = args.length ? positionals(args, "start URL", 1)[0] : undefined;
+      return startAudit(root, { ...input, url });
+    }
+    if (action === "status") {
+      const id = args.length ? positionals(args, "audit id", 1)[0] : undefined;
+      return auditStatus(root, id);
+    }
+    if (action === "resume") {
+      const wait = flag(args, "--wait");
+      return resumeAudit(root, positionals(args, "audit id", 1)[0], wait);
+    }
+    // The detached worker `audit start` and `audit resume` launch; not for direct use.
+    if (action === "_run") {
+      const [id, token] = positionals(args, "audit id and worker token", 2);
+      await runAuditWorker(root, id, token);
+      return auditStatus(root, id);
+    }
+    throw new OperationError("input", usage);
   }
 
   if (command === "query") {
