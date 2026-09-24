@@ -128,6 +128,10 @@ describe("Google authorization", () => {
         () => Response.json({ error: "invalid_grant", error_description: "Token has been expired or revoked." }, { status: 400 }),
         () => assert.rejects(googleAccessToken("google-sub-1", "searchConsole"), credentials("credentials", /revoked or has expired \(invalid_grant: Token has been expired or revoked\.\); run agenticseo google connect/)),
       );
+      await withFetch(
+        () => { throw new TypeError("fetch failed", { cause: new Error("connect ETIMEDOUT") }); },
+        () => assert.rejects(googleAccessToken("google-sub-1", "searchConsole"), credentials("provider", /Could not reach Google \(connect ETIMEDOUT\); behind a proxy, set NODE_USE_ENV_PROXY=1/)),
+      );
     });
   });
 
