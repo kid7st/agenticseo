@@ -20,7 +20,7 @@ const credentials = (kind: OperationError["kind"], message: RegExp) => (error: u
 async function withGoogleHome(run: (home: string) => Promise<void>) {
   const home = await mkdtemp(join(tmpdir(), "agenticseo-google-"));
   const saved = { XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME, GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET };
-  Object.assign(process.env, { XDG_CONFIG_HOME: home, GOOGLE_CLIENT_ID: "client-id", GOOGLE_CLIENT_SECRET: "client-secret" });
+  Object.assign(process.env, { XDG_CONFIG_HOME: home, GOOGLE_CLIENT_ID: "1234-abc.apps.googleusercontent.com", GOOGLE_CLIENT_SECRET: "client-secret" });
   try {
     await run(home);
   } finally {
@@ -133,10 +133,14 @@ describe("Google authorization", () => {
     });
   });
 
-  it("needs the Desktop OAuth client before starting", async () => {
+  it("needs a well-formed Desktop OAuth client id before opening the consent page", async () => {
     await withGoogleHome(async () => {
       delete process.env.GOOGLE_CLIENT_ID;
       await assert.rejects(connectGoogle({ products: ["searchConsole"], openUrl: async () => {} }), credentials("credentials", /GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are required/));
+      for (const wrong of ["...", "GOCSPX-secret", "123456789012", '"1234-abc.apps.googleusercontent.com"']) {
+        process.env.GOOGLE_CLIENT_ID = wrong;
+        await assert.rejects(connectGoogle({ products: ["searchConsole"], openUrl: async () => assert.fail("the consent page must not open") }), credentials("credentials", /is not an OAuth client id/));
+      }
     });
   });
 });
