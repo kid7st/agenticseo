@@ -33,6 +33,14 @@ const projectSchema = z.strictObject({
   // OpenSEO's per-project property mapping (gsc_connections). The Google grant
   // itself lives in the user's config directory, never in the project.
   searchConsole: googleConnectionSchema.extend({ siteUrl: z.string().min(1) }).optional(),
+  analytics: googleConnectionSchema
+    .extend({
+      propertyId: z.string().regex(/^properties\/\d+$/),
+      propertyDisplayName: z.string(),
+      propertyTimeZone: z.string().min(1),
+      propertyCurrencyCode: z.string().min(1),
+    })
+    .optional(),
 }).refine((project) => isLanguageServedForLocation(project.locationCode, project.languageCode), {
   message: "This language is not available for this location",
   path: ["languageCode"],

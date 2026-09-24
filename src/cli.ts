@@ -4,6 +4,7 @@ import { OperationError } from "./errors.js";
 import { AppError } from "./openseo/platform.js";
 import { spawn } from "node:child_process";
 import { brandLookup, promptLookup } from "./ai.js";
+import { analyticsHealth, analyticsOverview, analyticsProperties, analyticsReport, disconnectAnalytics, GA4_REPORTS, searchOpportunities, useAnalyticsProperty, type Ga4Report } from "./ga4.js";
 import { connectGoogle, disconnectGoogle, listGoogleAccounts, type GoogleProduct } from "./google.js";
 import { disconnectSearchConsole, exportSearchConsole, searchConsoleInspect, searchConsolePerformance, searchConsoleReport, searchConsoleSites, useSearchConsoleSite } from "./gsc.js";
 import { GSC_DATE_RANGES, GSC_DIMENSIONS, GSC_FILTER_OPERATORS, GSC_MAX_ROW_LIMIT, GSC_SEARCH_TYPES, type GscDimension } from "./openseo/gsc/searchAnalytics.js";
@@ -137,6 +138,15 @@ TRACKER_SETTINGS: --devices mobile|desktop|both --depth 10-100 (multiple of 10) 
   agenticseo gsc report [--range last_7_days|last_28_days|last_3_months] [--device DESKTOP|MOBILE|TABLET] [--country ISO3] [--project DIR]
   agenticseo gsc export [--dimension query|page] [--range ...] [--device ...] [--country ...] [--format csv|jsonl] [--out FILE] [--project DIR]
   agenticseo gsc inspect URL... [--language en-US] [--project DIR]
+  agenticseo ga4 properties
+  agenticseo ga4 use PROPERTY_ID [--account EMAIL] [--project DIR]
+  agenticseo ga4 disconnect [--project DIR]
+  agenticseo ga4 report landing-pages|page-performance|key-events|traffic-acquisition|ecommerce|site-search|audience
+      [--start YYYY-MM-DD --end YYYY-MM-DD] [--limit 1-1000] [--offset N] [--channel organic_search|all]
+      [--breakdown BREAKDOWN] [--compare] [--include-date] [--only-with-transactions] [--project DIR]
+  agenticseo ga4 overview [--start ... --end ...] [--trend daily|weekly] [--project DIR]
+  agenticseo ga4 health [--project DIR]
+  agenticseo ga4 opportunities [--start ... --end ...] [--limit 1-100] [--project DIR]
 RANGE: last_7_days, last_28_days, last_3_months, last_6_months, last_12_months, last_16_months
   agenticseo query "SELECT ..." [--project DIR]
 MARKET overrides the project's market for one call: --location US|2840 [--language en]
@@ -1011,6 +1021,64 @@ async function run([command, ...args]: string[]): Promise<unknown> {
     if (action === "inspect") {
       const languageCode = option(args, "--language");
       return searchConsoleInspect(root, { urls: positionals(args, "URLs", 10), languageCode });
+    }
+    throw new OperationError("input", usage);
+  }
+
+  if (command === "ga4") {
+    const [action, ...rest] = args;
+    args = rest;
+    const dates = () => {
+      const read = (name: string) => {
+        const value = option(args, name);
+        if (value !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new OperationError("input", `${name} must be YYYY-MM-DD`);
+        return value;
+      };
+      return { startDate: read("--start"), endDate: read("--end") };
+    };
+    if (action === "properties") {
+      rejectUnknown(args);
+      return analyticsProperties();
+    }
+    const root = await findProjectRoot(projectOption);
+    if (action === "use") {
+      const account = option(args, "--account");
+      return useAnalyticsProperty(root, { propertyId: positionals(args, "property id", 1)[0], account });
+    }
+    if (action === "disconnect") {
+      rejectUnknown(args);
+      return disconnectAnalytics(root);
+    }
+    if (action === "report") {
+      const [report, ...reportArgs] = args;
+      args = reportArgs;
+      if (!GA4_REPORTS.includes(report as Ga4Report)) throw new OperationError("input", `Report must be one of ${GA4_REPORTS.join(", ")}`);
+      const options = {
+        ...dates(),
+        limit: intOption(args, "--limit", 1, 1000),
+        offset: intOption(args, "--offset", 0, Number.MAX_SAFE_INTEGER),
+        channel: enumOption(args, "--channel", ["organic_search", "all"] as const),
+        breakdown: option(args, "--breakdown"),
+        compare: flag(args, "--compare") || undefined,
+        includeDate: flag(args, "--include-date") || undefined,
+        onlyWithTransactions: flag(args, "--only-with-transactions") || undefined,
+      };
+      rejectUnknown(args);
+      return analyticsReport(root, report as Ga4Report, options);
+    }
+    if (action === "overview") {
+      const input = { ...dates(), trend: enumOption(args, "--trend", ["daily", "weekly"] as const) };
+      rejectUnknown(args);
+      return analyticsOverview(root, input);
+    }
+    if (action === "health") {
+      rejectUnknown(args);
+      return analyticsHealth(root);
+    }
+    if (action === "opportunities") {
+      const input = { ...dates(), limit: intOption(args, "--limit", 1, 100) };
+      rejectUnknown(args);
+      return searchOpportunities(root, input);
     }
     throw new OperationError("input", usage);
   }
