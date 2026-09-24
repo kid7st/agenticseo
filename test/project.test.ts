@@ -142,3 +142,14 @@ test("paid commands refuse an invalid market from project.json or the command li
     assert.match(stored.stderr, /project\.json[\s\S]*languageCode/);
   });
 });
+
+test("help prints the usage and succeeds; an unknown command is an input error", async () => {
+  await withProject(async (root) => {
+    for (const args of [[], ["--help"], ["help"]]) {
+      const help = runCli(root, args);
+      assert.equal(help.status, 0, help.stderr);
+      assert.match(help.stdout, /^Usage:\n {2}agenticseo init/);
+    }
+    assert.equal(runCli(root, ["nope"]).status, 2);
+  });
+});

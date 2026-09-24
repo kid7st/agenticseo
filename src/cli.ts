@@ -1091,7 +1091,14 @@ async function run([command, ...args]: string[]): Promise<unknown> {
   throw new OperationError("input", usage);
 }
 
-run(process.argv.slice(2)).then(
+const argv = process.argv.slice(2);
+// Asking for help is not an error: print the usage and exit 0.
+if (argv.length === 0 || ["help", "--help", "-h"].includes(argv[0])) {
+  console.log(usage);
+  process.exit(0);
+}
+
+run(argv).then(
   (result) => console.log(JSON.stringify(result)),
   (error: unknown) => {
     if (error instanceof OperationError) {
