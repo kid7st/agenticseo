@@ -40,6 +40,7 @@ import { isCrawlableUrl, type CrawlTargetPolicy } from "../audit/url-policy.js";
 import { getOrigin, isSameOrigin, normalizeUrl } from "../audit/url-utils.js";
 import { fetchLighthouseResult, selectLighthouseSample } from "../audit/lighthouse.js";
 import { crawlPage } from "./site-audit-workflow-helpers.js";
+import { HEARTBEAT_INTERVAL_MS } from "../../worker.js";
 
 /** URLs leased and persisted together; upstream's persist sub-batch size. */
 const BATCH_SIZE = 25;
@@ -50,9 +51,6 @@ const MAX_DISCOVERED_PER_BATCH = 20_000;
 /** Lighthouse checks in flight: upstream's five URLs, each mobile and desktop. */
 const LIGHTHOUSE_CONCURRENCY = 10;
 
-export const HEARTBEAT_INTERVAL_MS = 5_000;
-/** A running audit whose heartbeat is older than this has lost its worker. */
-export const HEARTBEAT_STALE_MS = 30_000;
 
 export type AuditRunConfig = { maxPages: number; lighthouse: boolean } & Required<CrawlTargetPolicy>;
 
