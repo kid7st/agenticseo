@@ -46,12 +46,18 @@ function consent(input: { expectScopes: string[]; state?: (state: string) => str
   };
 }
 
+/** The token endpoint: the client check's bogus code gets invalid_grant (a known client), a real code gets tokens. */
+const tokenEndpoint = (tokens: () => Response) => (url: string, init: RequestInit) => {
+  if (url !== TOKEN_URL) return realFetch(url);
+  return String(init.body).includes("code=agenticseo-client-check") ? Response.json({ error: "invalid_grant", error_description: "Malformed auth code." }, { status: 400 }) : tokens();
+};
+
 const tokenResponse = (scope: string, extra: object = {}) =>
   Response.json({ access_token: "access-1", expires_in: 3600, refresh_token: "refresh-1", scope, id_token: idToken({ sub: "google-sub-1", email: "owner@kua.ai" }), ...extra });
 
 async function connected(scopes = [SC, GA]) {
   await withFetch(
-    (url) => (url === TOKEN_URL ? tokenResponse(["openid", "email", ...scopes].join(" ")) : realFetch(url)),
+    tokenEndpoint(() => tokenResponse(["openid", "email", ...scopes].join(" "))),
     () => connectGoogle({ products: ["searchConsole", "analytics"], openUrl: consent({ expectScopes: [SC, GA] }) }),
   );
 }
@@ -61,13 +67,13 @@ describe("Google authorization", () => {
     await withGoogleHome(async (home) => {
       const seen: URL[] = [];
       const { result, requests } = await withFetch(
-        (url) => (url === TOKEN_URL ? tokenResponse(`openid email ${SC} ${GA}`) : realFetch(url)),
+        tokenEndpoint(() => tokenResponse(`openid email ${SC} ${GA}`)),
         () => connectGoogle({ products: ["searchConsole", "analytics"], openUrl: consent({ expectScopes: [SC, GA], seen }) }),
       );
       const params = seen[0].searchParams;
       assert.deepEqual([params.get("access_type"), params.get("code_challenge_method"), params.get("prompt")], ["offline", "S256", "select_account consent"]);
       assert.match(params.get("redirect_uri")!, /^http:\/\/127\.0\.0\.1:\d+$/);
-      const exchange = new URLSearchParams(String(requests.find((request) => request.url === TOKEN_URL)?.body));
+      const exchange = new URLSearchParams(String(requests.filter((request) => request.url === TOKEN_URL).at(-1)?.body));
       assert.deepEqual([exchange.get("grant_type"), exchange.get("code"), exchange.get("redirect_uri")], ["authorization_code", "auth-code", params.get("redirect_uri")]);
       assert.ok((exchange.get("code_verifier") ?? "").length >= 43, "the PKCE verifier is sent with the code");
       assert.deepEqual(result.products, ["searchConsole", "analytics"]);
@@ -85,15 +91,17 @@ describe("Google authorization", () => {
   it("says which product the user did not grant, and refuses a redirect from another attempt", async () => {
     await withGoogleHome(async () => {
       const { result } = await withFetch(
-        (url) => (url === TOKEN_URL ? tokenResponse(`openid email ${SC}`) : realFetch(url)),
+        tokenEndpoint(() => tokenResponse(`openid email ${SC}`)),
         () => connectGoogle({ products: ["searchConsole", "analytics"], openUrl: consent({ expectScopes: [SC, GA] }) }),
       );
       assert.deepEqual(result.notGranted, ["Google Analytics"]);
       await assert.rejects(googleAccessToken("google-sub-1", "analytics").then(() => undefined), credentials("credentials", /has not granted Google Analytics access/));
 
-      await assert.rejects(
-        connectGoogle({ products: ["searchConsole"], openUrl: consent({ expectScopes: [SC], state: () => "forged" }) }),
-        credentials("input", /unexpected state/),
+      await withFetch(tokenEndpoint(() => tokenResponse(`openid email ${SC}`)), () =>
+        assert.rejects(
+          connectGoogle({ products: ["searchConsole"], openUrl: consent({ expectScopes: [SC], state: () => "forged" }) }),
+          credentials("input", /unexpected state/),
+        ),
       );
     });
   });
@@ -137,6 +145,16 @@ describe("Google authorization", () => {
     await withGoogleHome(async () => {
       delete process.env.GOOGLE_CLIENT_ID;
       await assert.rejects(connectGoogle({ products: ["searchConsole"], openUrl: async () => {} }), credentials("credentials", /GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are required/));
+      process.env.GOOGLE_CLIENT_ID = "1234-abc.apps.googleusercontent.com";
+      const neverOpen = async () => assert.fail("the consent page must not open");
+      await withFetch(
+        () => Response.json({ error: "invalid_client", error_description: "The OAuth client was not found." }, { status: 401 }),
+        () => assert.rejects(connectGoogle({ products: ["searchConsole"], openUrl: neverOpen }), credentials("credentials", /does not know the OAuth client .*minutes to hours/)),
+      );
+      await withFetch(
+        () => Response.json({ error: "invalid_client", error_description: "The provided client secret is invalid." }, { status: 401 }),
+        () => assert.rejects(connectGoogle({ products: ["searchConsole"], openUrl: neverOpen }), credentials("credentials", /rejected the OAuth client secret/)),
+      );
       for (const wrong of ["...", "GOCSPX-secret", "123456789012", '"1234-abc.apps.googleusercontent.com"']) {
         process.env.GOOGLE_CLIENT_ID = wrong;
         await assert.rejects(connectGoogle({ products: ["searchConsole"], openUrl: async () => assert.fail("the consent page must not open") }), credentials("credentials", /is not an OAuth client id/));
