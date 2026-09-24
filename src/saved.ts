@@ -1,5 +1,3 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
 import { OperationError } from "./errors.js";
 import type { Market } from "./market.js";
 import { createDataforseoClient, ledgerCost, type ProviderCall } from "./openseo/dataforseo/client.js";
@@ -16,7 +14,7 @@ import {
   type SavedKeywordRow,
 } from "./openseo/keywords/saved-keywords.js";
 import { findTagIdsByNames, type SavedKeywordsListParams } from "./openseo/keywords/savedKeywordsRepository.js";
-import { stateDirectory } from "./project.js";
+import { toCsv, toJsonl, writeExport } from "./export.js";
 import { withStore, type Store } from "./store.js";
 
 export type SavedFilters = Omit<SavedKeywordsListParams, "tagIds" | "page" | "pageSize">;
@@ -94,36 +92,18 @@ export async function deleteTagCommand(root: string, name: string) {
   return withStore(root, (db) => deleteSavedKeywordTag(db, { tagId: tagIds(db, [name])[0] }));
 }
 
-// OpenSEO's saved-keywords CSV (src/client/features/saved-keywords/savedKeywordsUtils.ts
-// and src/client/lib/csv.ts): same columns, every field quoted, numbers rounded to two
-// decimals, and formula-injection prefixes neutralized.
+// OpenSEO's saved-keywords CSV columns (src/client/features/saved-keywords/savedKeywordsUtils.ts).
 const csvHeaders = ["Keyword", "Volume", "CPC", "Competition", "Score", "Intent", "Tags", "Fetched At"];
 
-function csvField(value: string | number | null) {
-  const rounded = typeof value === "number" && Number.isFinite(value) ? Math.round((value + Number.EPSILON) * 100) / 100 : value;
-  let text = rounded == null ? "" : String(rounded);
-  if (typeof rounded === "string" && text.length > 0 && ["=", "+", "-", "@", "\t", "\r", "\n"].includes(text[0])) text = `'${text}`;
-  return `"${text.replaceAll('"', '""')}"`;
-}
-
-function toCsv(rows: SavedKeywordRow[]) {
-  const lines = rows.map((row) =>
-    [row.keyword, row.searchVolume, row.cpc, row.competition, row.keywordDifficulty, row.intent, row.tags.map((tag) => tag.name).join(", "), row.fetchedAt]
-      .map(csvField)
-      .join(","),
-  );
-  return `${[csvHeaders.map(csvField).join(","), ...lines].join("\n")}\n`;
-}
+const csvRow = (row: SavedKeywordRow) => [row.keyword, row.searchVolume, row.cpc, row.competition, row.keywordDifficulty, row.intent, row.tags.map((tag) => tag.name).join(", "), row.fetchedAt];
 
 /** Writes the filtered list as CSV (OpenSEO's export) or JSONL (one full row per line). */
 export async function exportCommand(root: string, input: SavedFilters & { format: "csv" | "jsonl"; out?: string }) {
   const { format, out, ...filters } = input;
   const { rows } = await withStore(root, (db) => exportSavedKeywords(db, filters));
   if (rows.length === 0) throw new OperationError("input", "No saved keywords match; nothing to export");
-  const file = out ? resolve(out) : join(stateDirectory(root), "exports", `saved-keywords-${new Date().toISOString().replaceAll(":", "-")}.${format}`);
-  await mkdir(dirname(file), { recursive: true });
-  await writeFile(file, format === "csv" ? toCsv(rows) : rows.map((row) => JSON.stringify(row)).join("\n") + "\n");
-  return { file, format, rowCount: rows.length };
+  const content = format === "csv" ? toCsv(csvHeaders, rows.map(csvRow)) : toJsonl(rows);
+  return { file: await writeExport(root, { name: "saved-keywords", format, content, out }), format, rowCount: rows.length };
 }
 
 /** OpenSEO's saved-keyword metrics refresh: one paid call per market, stored as the latest snapshot. */

@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 import { resolve } from "node:path";
 import { OperationError } from "./errors.js";
-import { auditStatus, resumeAudit, runAuditWorker, startAudit } from "./audit.js";
+import { auditIssues, auditPages, auditStatus, deleteAudit, exportAudit, listAudits, resumeAudit, runAuditWorker, startAudit } from "./audit.js";
 import { backlinksDomains, backlinksLinks, backlinksOverview, backlinksPages, domainRatings } from "./backlinks.js";
 import { domainOverview, domainPages, rankedKeywords, serpCompetitors } from "./domain.js";
 import { keywordMetrics, researchKeywords, serpResults } from "./keywords.js";
 import { localBusinesses, localCategories, localPosts, localProfile, localQuestions, localRankGrid, localReviews, localSerp } from "./local.js";
 import { languageForCall, marketForCall, marketForNewProject } from "./market.js";
+import { PAGE_FETCH_CLASSES } from "./openseo/shared/audit-fetch-class.js";
 import { DEFAULT_AUDIT_PAGES, MIN_AUDIT_PAGES, PAID_MAX_AUDIT_PAGES } from "./openseo/shared/audit-limits.js";
 import { RESEARCH_SCOPES, type ResearchScope } from "./openseo/researchScope.js";
 import { deleteTagCommand, exportCommand, listCommand, refreshCommand, removeCommand, renameTagCommand, saveCommand, tagCommand, type SavedFilters } from "./saved.js";
@@ -71,6 +72,12 @@ BUSINESS is one of --name TEXT, --cid ID or --place-id ID; TARGET is any of --ci
   agenticseo audit start [URL] [--max-pages 10-10000] [--allow-private] [--wait] [--project DIR]
   agenticseo audit status [ID] [--project DIR]
   agenticseo audit resume ID [--wait] [--project DIR]
+  agenticseo audit issues [ID] [--severity critical|warning|info] [--type ISSUE_TYPE] [--limit 1-1000] [--project DIR]
+  agenticseo audit pages [ID] [--fetch-class ok|blocked|rate_limited|error] [--status CODE]
+      [--url-contains TEXT] [--limit 1-1000] [--project DIR]
+  agenticseo audit export [ID] [--table issues|pages] [--format csv|jsonl] [--out FILE] [--project DIR]
+  agenticseo audit list [--project DIR]
+  agenticseo audit delete ID [--project DIR]
   agenticseo query "SELECT ..." [--project DIR]
 MARKET overrides the project's market for one call: --location US|2840 [--language en]
 FILTERS: --search TEXT --include TERM,... --exclude TERM,... --tags TAG,... --min-volume N --max-volume N
@@ -626,6 +633,41 @@ async function run([command, ...args]: string[]): Promise<unknown> {
     if (action === "resume") {
       const wait = flag(args, "--wait");
       return resumeAudit(root, positionals(args, "audit id", 1)[0], wait);
+    }
+    if (action === "issues") {
+      const input = {
+        severity: enumOption(args, "--severity", ["critical", "warning", "info"] as const),
+        issueType: option(args, "--type"),
+        limit: intOption(args, "--limit", 1, 1000) ?? 200,
+      };
+      const auditId = args.length ? positionals(args, "audit id", 1)[0] : undefined;
+      return auditIssues(root, { ...input, auditId });
+    }
+    if (action === "pages") {
+      const input = {
+        fetchClass: enumOption(args, "--fetch-class", PAGE_FETCH_CLASSES),
+        statusCode: intOption(args, "--status", 0, 999),
+        urlContains: option(args, "--url-contains"),
+        limit: intOption(args, "--limit", 1, 1000) ?? 100,
+      };
+      const auditId = args.length ? positionals(args, "audit id", 1)[0] : undefined;
+      return auditPages(root, { ...input, auditId });
+    }
+    if (action === "export") {
+      const input = {
+        table: enumOption(args, "--table", ["issues", "pages"] as const) ?? "issues",
+        format: enumOption(args, "--format", ["csv", "jsonl"] as const) ?? "csv",
+        out: option(args, "--out"),
+      };
+      const auditId = args.length ? positionals(args, "audit id", 1)[0] : undefined;
+      return exportAudit(root, { ...input, auditId });
+    }
+    if (action === "list") {
+      rejectUnknown(args);
+      return listAudits(root);
+    }
+    if (action === "delete") {
+      return deleteAudit(root, positionals(args, "audit id", 1)[0]);
     }
     // The detached worker `audit start` and `audit resume` launch; not for direct use.
     if (action === "_run") {

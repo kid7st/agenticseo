@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
@@ -41,7 +42,8 @@ function testSite() {
       return res.end(`<?xml version="1.0"?><urlset><url><loc>${origin}/</loc></url><url><loc>${origin}/orphan</loc></url></urlset>`);
     }
     if (path === "/") return html(page("home", ["/a", "/missing", "/old", "/private"]));
-    if (path === "/a") return html(page("alpha", ["/", "/busy"]));
+    // No title: a critical issue whose type sorts after the warnings, to show severity ordering.
+    if (path === "/a") return html(page("alpha", ["/", "/busy"]).replace(/<title>.*<\/title>/, ""));
     if (path === "/busy") {
       if (requests.get(path) === 1) {
         res.writeHead(429, { "Retry-After": "1" });
@@ -82,7 +84,7 @@ function auditRows(root: string, auditId: string) {
   }
 }
 
-const expectedIssues = ["broken-internal-link /", "broken-page /missing", "orphan-page /orphan"];
+const expectedIssues = ["broken-internal-link /", "broken-page /missing", "missing-title /a", "orphan-page /orphan"];
 
 describe("site audit", () => {
   let site: ReturnType<typeof testSite>;
@@ -119,6 +121,39 @@ describe("site audit", () => {
       assert.equal(site.requests.get("/busy"), 2, "a 429 is retried after the cooldown");
       for (const path of crawledPaths.filter((path) => path !== "/busy")) assert.equal(site.requests.get(path), 1, `${path} fetched once`);
       assert.deepEqual(parse(await runCliAsync(root, ["audit", "status"])).id, status.id, "status defaults to the latest audit");
+
+      const issues = parse(await runCliAsync(root, ["audit", "issues", "--limit", "2"]));
+      assert.equal(issues.total, 4);
+      assert.deepEqual(
+        issues.issues.map((issue: { severity: string }) => issue.severity),
+        ["critical", "critical"],
+        "a limit drops lower severities first",
+      );
+      assert.deepEqual(issues.issues[0].details, { targetUrl: `${origin}/missing`, targetStatus: 404 });
+      assert.match(issues.summary[0].howToFix, /\w/);
+      const warnings = parse(await runCliAsync(root, ["audit", "issues", status.id, "--severity", "warning"]));
+      assert.deepEqual(warnings.issues.map((issue: { issueType: string }) => issue.issueType), ["broken-page", "orphan-page"]);
+      const unknownType = await runCliAsync(root, ["audit", "issues", "--type", "no-such-issue"]);
+      assert.equal(unknownType.status, 2);
+
+      const notFound = parse(await runCliAsync(root, ["audit", "pages", "--status", "404"]));
+      assert.deepEqual(notFound.pages.map((row: { url: string }) => row.url), [`${origin}/missing`]);
+      assert.equal(parse(await runCliAsync(root, ["audit", "pages", "--url-contains", "/o"])).total, 2);
+
+      const issuesCsv = parse(await runCliAsync(root, ["audit", "export"]));
+      const csvLines = (await readFile(issuesCsv.file, "utf8")).trimEnd().split("\n");
+      assert.equal(csvLines[0], '"Severity","Issue","URL","Details","How To Fix"');
+      assert.match(csvLines[1], new RegExp(`^"critical","Broken internal link","${origin}/","{""targetUrl"":""${origin}/missing"",""targetStatus"":404}","Update the link`));
+      assert.equal(csvLines.length, 5);
+      const pagesJsonl = parse(await runCliAsync(root, ["audit", "export", status.id, "--table", "pages", "--format", "jsonl"]));
+      const pageLines = (await readFile(pagesJsonl.file, "utf8")).trimEnd().split("\n").map((line) => JSON.parse(line));
+      assert.deepEqual(Object.keys(pageLines[0]), ["url", "statusCode", "title", "h1Count", "wordCount", "imagesTotal", "imagesMissingAlt", "responseTimeMs"]);
+      assert.equal(pageLines.length, crawledPaths.length);
+
+      assert.deepEqual(parse(await runCliAsync(root, ["audit", "list"])).audits.map((audit: { id: string }) => audit.id), [status.id]);
+      assert.deepEqual(parse(await runCliAsync(root, ["audit", "delete", status.id])), { auditId: status.id, deleted: true, stoppedWorker: false });
+      assert.deepEqual(auditRows(root, status.id).pages, [], "pages are deleted with the audit");
+      assert.equal((await runCliAsync(root, ["audit", "status", status.id])).status, 2);
     });
   });
 
@@ -171,14 +206,29 @@ describe("site audit", () => {
     });
   });
 
-  it("will not resume an audit whose worker is still alive", async () => {
+  it("will not resume an audit whose worker is alive, and stops the worker when the audit is deleted", async () => {
     await withProject(async (root) => {
+      site.requests.clear();
       const started = parse(await runCliAsync(root, ["audit", "start", origin, "--allow-private"]));
       const second = await runCliAsync(root, ["audit", "resume", started.id]);
       assert.equal(second.status, 2);
       assert.match(second.stderr, /still running/);
-      // Let the worker finish before the project directory is removed.
-      while (parse(await runCliAsync(root, ["audit", "status", started.id])).status === "running") await sleep(200);
+
+      while ((site.requests.get("/") ?? 0) === 0) await sleep(50);
+      const db = new DatabaseSync(join(root, ".agenticseo", "data", "agenticseo.db"), { readOnly: true });
+      const { worker_pid: pid } = db.prepare(`SELECT worker_pid FROM audits WHERE id = ?`).get(started.id) as { worker_pid: number };
+      db.close();
+      assert.deepEqual(parse(await runCliAsync(root, ["audit", "delete", started.id])), { auditId: started.id, deleted: true, stoppedWorker: true });
+      const deadline = Date.now() + 10_000;
+      for (;;) {
+        try {
+          process.kill(pid, 0);
+        } catch {
+          break;
+        }
+        assert.ok(Date.now() < deadline, "the worker kept running after its audit was deleted");
+        await sleep(50);
+      }
     });
   });
 });

@@ -37,7 +37,7 @@ Every result states `source`, date, market and `costUsd`, and points to an `evid
 - `agenticseo saved add KEYWORD... --tags TAG,...`: save chosen keywords only after the user explicitly confirms. Suggest short tags such as `topic:<topic>`, `intent:<intent>` or `page:<slug>`, and confirm new tag names. Researched keywords keep their metrics; `agenticseo saved refresh` re-fetches all saved keywords and is billed, so ask first.
 - `agenticseo query "SELECT ..."`: read-only SQL over saved keywords and stored metrics when a question needs a join or aggregate, for example the highest-volume saved keywords per tag. Select only the columns and rows you need.
 
-Not available yet in AgenticSEO: Search Console data and local SEO lookups. Say so when the task needs them; do not approximate them.
+Not available yet in AgenticSEO: Search Console data. Say so when the task needs it; do not approximate it.
 
 ## Workflow
 
