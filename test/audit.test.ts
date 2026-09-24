@@ -5,10 +5,10 @@ import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
-import { auditStatus } from "../src/audit.js";
+import { auditStatus, exportAudit, lighthouseIssues, lighthouseResults } from "../src/audit.js";
 import { OwnershipLost, runSiteAudit } from "../src/openseo/workflows/siteAuditRunner.js";
 import { withStore } from "../src/store.js";
-import { runCliAsync, withProject } from "./helpers.js";
+import { runCliAsync, withFetch, withProject } from "./helpers.js";
 
 /** A clean page: title, description, one H1 and enough distinct words, plus the given links. */
 function page(name: string, links: string[]) {
@@ -99,11 +99,13 @@ describe("site audit", () => {
   });
   after(() => site.server.close());
 
-  it("refuses a local target without --allow-private", async () => {
+  it("refuses a local target without --allow-private, and Lighthouse without a key", async () => {
     await withProject(async (root) => {
       const result = await runCliAsync(root, ["audit", "start", origin]);
       assert.equal(result.status, 2);
       assert.match(result.stderr, /--allow-private/);
+      const noKey = await runCliAsync(root, ["audit", "start", origin, "--allow-private", "--lighthouse"]);
+      assert.equal(noKey.status, 3, "Lighthouse needs the DataForSEO key before the crawl starts");
     });
   });
 
@@ -203,6 +205,82 @@ describe("site audit", () => {
         await assert.rejects(run, OwnershipLost);
         assert.deepEqual({ ...db.prepare(`SELECT status, worker_token FROM audits WHERE id = 'a1'`).get() }, { status: "running", worker_token: "resumer" });
       });
+    });
+  });
+
+  it("runs Lighthouse on the page sample, stops on a rejected key and resumes without paying twice", async () => {
+    await withProject(async (root) => {
+      const realFetch = globalThis.fetch;
+      const billed: string[] = [];
+      let keyRejected = true;
+      const lighthouse = (url: string, init: RequestInit) => {
+        const [task] = JSON.parse(String(init.body)) as Array<{ url: string; for_mobile: boolean }>;
+        const check = `${new URL(task.url).pathname} ${task.for_mobile ? "mobile" : "desktop"}`;
+        if (!task.for_mobile && keyRejected) return new Response("Unauthorized", { status: 401 });
+        billed.push(check);
+        if (check === "/busy desktop") {
+          // A page the provider's browser could not load: billed, recorded as a failed check.
+          return Response.json({ status_code: 20000, tasks: [{ status_code: 40000, status_message: "Lighthouse encountered an error with the following code: NO_FCP", cost: 0.00425, path: ["v3", "on_page", "lighthouse", "live", "json"] }] });
+        }
+        const categories = { performance: { score: 0.42, auditRefs: ["unminified-css", "font-display", "unused-css-rules", "render-blocking-resources", "largest-contentful-paint"].map((id) => ({ id })) }, accessibility: { score: 1 }, "best-practices": { score: 0.96 }, seo: { score: 0.9 } };
+        const audits = {
+          "render-blocking-resources": { title: "Eliminate render-blocking resources", description: "Resources are blocking the first paint.", score: 0.3, scoreDisplayMode: "metricSavings", details: { overallSavingsMs: 450, items: [{ url: `${origin}/style.css`, wastedMs: 450 }] } },
+          "unused-css-rules": { title: "Reduce unused CSS", score: 0.5, scoreDisplayMode: "metricSavings", details: { overallSavingsBytes: 60_000 } },
+          "font-display": { title: "Ensure text remains visible during webfont load", score: 0, scoreDisplayMode: "binary" },
+          "unminified-css": { title: "Minify CSS", score: 0.8, scoreDisplayMode: "metricSavings" },
+          "largest-contentful-paint": { score: 0.2, scoreDisplayMode: "numeric", numericValue: 4100, displayValue: "4.1 s" },
+          "cumulative-layout-shift": { score: 1, numericValue: 0.01 },
+          "interaction-to-next-paint": { score: 1, numericValue: 120 },
+          "server-response-time": { score: 1, numericValue: 80 },
+        };
+        return Response.json({ status_code: 20000, tasks: [{ id: "t", status_code: 20000, cost: 0.00425, path: ["v3", "on_page", "lighthouse", "live", "json"], result: [{ requestedUrl: task.url, finalUrl: task.url, lighthouseVersion: "12", categories, audits }] }] });
+      };
+      const handler = (url: string, init: RequestInit) => (url.startsWith("https://api.dataforseo.com/") ? lighthouse(url, init) : realFetch(url, init));
+
+      const now = new Date().toISOString();
+      await withStore(root, (db) =>
+        db
+          .prepare(`INSERT INTO audits (id, start_url, status, config, current_phase, worker_token, heartbeat_at, started_at) VALUES ('lh', ?, 'running', '{"maxPages":10,"allowPrivate":true,"lighthouse":true}', 'discovery', 'first', ?, ?)`)
+          .run(`${origin}/`, now, now),
+      );
+      await withFetch(handler, () => withStore(root, (db) => assert.rejects(runSiteAudit(db, "lh", "first"), { code: "DATAFORSEO_AUTH_FAILED" })));
+      let status = await auditStatus(root, "lh");
+      assert.equal(status.status, "failed");
+      assert.equal(status.phase, "lighthouse");
+      // The start page and one page per URL template, mobile and desktop.
+      assert.deepEqual(status.lighthouse, { total: 8, completed: 4, failed: 0, costUsd: 0.017 });
+
+      keyRejected = false;
+      billed.length = 0;
+      await withStore(root, (db) => db.prepare(`UPDATE audits SET status = 'running', worker_token = 'second', heartbeat_at = ? WHERE id = 'lh'`).run(new Date().toISOString()));
+      await withFetch(handler, () => withStore(root, (db) => runSiteAudit(db, "lh", "second")));
+      assert.deepEqual(billed.sort(), ["/ desktop", "/a desktop", "/busy desktop", "/orphan desktop"], "stored checks are not bought again");
+      status = await auditStatus(root, "lh");
+      assert.equal(status.status, "completed");
+      assert.deepEqual(status.lighthouse, { total: 8, completed: 7, failed: 1, costUsd: 0.034 });
+
+      const results = await lighthouseResults(root, "lh");
+      const home = results.results.find((row) => row.url === `${origin}/` && row.strategy === "mobile");
+      assert.deepEqual(home?.scores, { performance: 42, accessibility: 100, bestPractices: 96, seo: 90 });
+      assert.equal(home?.lcpMs, 4100);
+      assert.match(results.results.find((row) => row.error)?.error ?? "", /NO_FCP/);
+      assert.ok(home);
+      const issues = await lighthouseIssues(root, { auditId: "lh", resultId: home.resultId, category: "performance" });
+      assert.deepEqual(
+        issues.issues.map((issue) => [issue.auditKey, issue.severity, issue.impactMs]),
+        [
+          ["render-blocking-resources", "critical", 450],
+          ["unused-css-rules", "warning", null],
+          ["font-display", "critical", null],
+          ["unminified-css", "warning", null],
+        ],
+        "largest savings first, then lowest score; numeric metric audits are not issues",
+      );
+
+      const exported = await exportAudit(root, { auditId: "lh", table: "performance", format: "csv" });
+      const lines = (await readFile(exported.file, "utf8")).trimEnd().split("\n");
+      assert.equal(lines[0], '"URL","Device","Performance","Accessibility","SEO","LCP (ms)","CLS","INP (ms)","TTFB (ms)"');
+      assert.equal(lines.length, 9);
     });
   });
 

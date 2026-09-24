@@ -10,7 +10,8 @@
 // limits and are not ported. The worker owns the audit through a token and a
 // heartbeat, so a resumed run can take over a dead worker's leases; robots.txt and
 // the 429 cooldown are checkpointed on the audit row and reused on resume.
-// Lighthouse, KV progress, billing and telemetry are not ported.
+// Lighthouse results are the Lighthouse phase's checkpoint: a resumed run skips
+// the checks already stored. KV progress, billing and telemetry are not ported.
 import { OperationError } from "../../errors.js";
 import { transaction, type Store } from "../../store.js";
 import {
@@ -37,6 +38,7 @@ import { runPageReporters, type DetectedIssue } from "../audit/issues/page-repor
 import type { CrawledPageResult } from "../audit/types.js";
 import { isCrawlableUrl, type CrawlTargetPolicy } from "../audit/url-policy.js";
 import { getOrigin, isSameOrigin, normalizeUrl } from "../audit/url-utils.js";
+import { fetchLighthouseResult, selectLighthouseSample } from "../audit/lighthouse.js";
 import { crawlPage } from "./site-audit-workflow-helpers.js";
 
 /** URLs leased and persisted together; upstream's persist sub-batch size. */
@@ -45,17 +47,19 @@ const BATCH_SIZE = 25;
 const MAX_STORED_LINKS_PER_PAGE = 500;
 /** Cap newly discovered URLs per batch; crawler-trap page families emit thousands. */
 const MAX_DISCOVERED_PER_BATCH = 20_000;
+/** Lighthouse checks in flight: upstream's five URLs, each mobile and desktop. */
+const LIGHTHOUSE_CONCURRENCY = 10;
 
 export const HEARTBEAT_INTERVAL_MS = 5_000;
 /** A running audit whose heartbeat is older than this has lost its worker. */
 export const HEARTBEAT_STALE_MS = 30_000;
 
-export type AuditRunConfig = { maxPages: number } & Required<CrawlTargetPolicy>;
+export type AuditRunConfig = { maxPages: number; lighthouse: boolean } & Required<CrawlTargetPolicy>;
 
 type AuditRow = {
   start_url: string;
   config: string;
-  current_phase: "discovery" | "crawling" | "finalizing" | "completed";
+  current_phase: "discovery" | "crawling" | "lighthouse" | "finalizing" | "completed";
   robots_text: string | null;
   throttle_state: string | null;
 };
@@ -102,6 +106,7 @@ export async function runSiteAudit(db: Store, auditId: string, token: string) {
     const config = JSON.parse(audit.config) as AuditRunConfig;
     if (audit.current_phase === "discovery") await runDiscoveryPhase(db, auditId, owned, audit.start_url, config);
     if (readAudit(db, auditId).current_phase === "crawling") await runCrawlPhase(db, auditId, owned, config);
+    if (config.lighthouse && readAudit(db, auditId).current_phase !== "finalizing") await runLighthousePhase(db, auditId, owned);
     await finalizeAudit(db, auditId, owned);
   } catch (error) {
     // Scoped to the owner token: a worker that lost the audit cannot mark it failed.
@@ -255,6 +260,61 @@ async function persistCrawledPages(
       auditId,
     );
   });
+}
+
+/**
+ * Lighthouse (mobile and desktop) on upstream's sample: the start page plus one
+ * page per URL template, at most ten pages. Each stored result is a checkpoint, so
+ * a resumed run pays only for the checks it has not stored.
+ */
+async function runLighthousePhase(db: Store, auditId: string, owned: () => void) {
+  const audit = readAudit(db, auditId);
+  const pages = db.prepare(`SELECT id, url, status_code FROM audit_pages WHERE audit_id = ? ORDER BY rowid`).all(auditId) as Array<{
+    id: string;
+    url: string;
+    status_code: number | null;
+  }>;
+  const sample = new Set(selectLighthouseSample(pages.map((page) => ({ url: page.url, statusCode: page.status_code ?? 0 })), audit.start_url, "auto"));
+  const checks = pages
+    .filter((page) => sample.has(page.url))
+    .flatMap((page) => (["mobile", "desktop"] as const).map((strategy) => ({ url: page.url, pageId: page.id, strategy })));
+  transaction(db, () => {
+    owned();
+    db.prepare(`UPDATE audits SET current_phase = 'lighthouse', lighthouse_total = ? WHERE id = ?`).run(checks.length, auditId);
+  });
+
+  const stored = new Set(
+    (db.prepare(`SELECT page_id, strategy FROM audit_lighthouse_results WHERE audit_id = ?`).all(auditId) as Array<{ page_id: string; strategy: string }>).map(
+      (row) => `${row.page_id} ${row.strategy}`,
+    ),
+  );
+  const todo = checks.filter((check) => !stored.has(`${check.pageId} ${check.strategy}`));
+  const insert = db.prepare(
+    `INSERT OR IGNORE INTO audit_lighthouse_results (
+       id, audit_id, page_id, strategy, performance_score, accessibility_score, best_practices_score, seo_score,
+       lcp_ms, cls, inp_ms, ttfb_ms, error_message, payload_json, cost_usd, fetched_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  for (let start = 0; start < todo.length; start += LIGHTHOUSE_CONCURRENCY) {
+    owned();
+    const chunk = todo.slice(start, start + LIGHTHOUSE_CONCURRENCY);
+    // allSettled: one check stopping the audit must not discard its siblings' billed results.
+    const settled = await Promise.allSettled(chunk.map((check) => fetchLighthouseResult(check.url, check.pageId, check.strategy)));
+    const fetched = settled.flatMap((outcome) => (outcome.status === "fulfilled" ? [outcome.value] : []));
+    const ids = await Promise.all(fetched.map(({ result }) => deterministicAuditRowId(auditId, result.pageId, result.strategy)));
+    const fetchedAt = new Date().toISOString();
+    transaction(db, () => {
+      owned();
+      fetched.forEach(({ result, payloadJson, costUsd }, index) => {
+        insert.run(
+          ids[index], auditId, result.pageId, result.strategy, result.performanceScore, result.accessibilityScore, result.bestPracticesScore,
+          result.seoScore, result.lcpMs, result.cls, result.inpMs, result.ttfbMs, result.errorMessage ?? null, payloadJson, costUsd, fetchedAt,
+        );
+      });
+    });
+    const rejected = settled.find((outcome) => outcome.status === "rejected");
+    if (rejected) throw rejected.reason;
+  }
 }
 
 async function finalizeAudit(db: Store, auditId: string, owned: () => void) {

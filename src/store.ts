@@ -51,16 +51,18 @@ const migrations = [
    );`,
   // Site audits follow OpenSEO's src/db/audit.schema.ts. Upstream keeps the crawl frontier
   // and link targets in a per-audit Durable Object (AuditScratchpad); here they are
-  // tables deleted when the audit finalizes. worker_* and heartbeat_at record which
+  // tables deleted when the audit finalizes. A Lighthouse result keeps its compact
+  // payload in payload_json, where upstream stores it in R2. worker_* and heartbeat_at record which
   // local process owns a running audit, so an interrupted one can be resumed.
   `CREATE TABLE audits (
      id TEXT PRIMARY KEY,
      start_url TEXT NOT NULL,
      status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'failed')),
      config TEXT NOT NULL,
-     current_phase TEXT NOT NULL CHECK (current_phase IN ('discovery', 'crawling', 'finalizing', 'completed')),
+     current_phase TEXT NOT NULL CHECK (current_phase IN ('discovery', 'crawling', 'lighthouse', 'finalizing', 'completed')),
      pages_crawled INTEGER NOT NULL DEFAULT 0,
      pages_total INTEGER NOT NULL DEFAULT 0,
+     lighthouse_total INTEGER NOT NULL DEFAULT 0,
      robots_text TEXT,
      throttle_state TEXT,
      error_detail TEXT,
@@ -135,7 +137,26 @@ const migrations = [
      url TEXT NOT NULL,
      targets_json TEXT NOT NULL
    );
-   CREATE INDEX audit_page_links_audit_idx ON audit_page_links (audit_id);`,
+   CREATE INDEX audit_page_links_audit_idx ON audit_page_links (audit_id);
+   CREATE TABLE audit_lighthouse_results (
+     id TEXT PRIMARY KEY,
+     audit_id TEXT NOT NULL REFERENCES audits (id) ON DELETE CASCADE,
+     page_id TEXT NOT NULL REFERENCES audit_pages (id) ON DELETE CASCADE,
+     strategy TEXT NOT NULL CHECK (strategy IN ('mobile', 'desktop')),
+     performance_score INTEGER,
+     accessibility_score INTEGER,
+     best_practices_score INTEGER,
+     seo_score INTEGER,
+     lcp_ms REAL,
+     cls REAL,
+     inp_ms REAL,
+     ttfb_ms REAL,
+     error_message TEXT,
+     payload_json TEXT,
+     cost_usd REAL NOT NULL,
+     fetched_at TEXT NOT NULL
+   );
+   CREATE INDEX audit_lighthouse_results_audit_id_idx ON audit_lighthouse_results (audit_id);`,
 ];
 
 export const databaseFile = (directory: string) => join(directory, "agenticseo.db");
