@@ -1092,8 +1092,8 @@ async function run([command, ...args]: string[]): Promise<unknown> {
 }
 
 const argv = process.argv.slice(2);
-// Asking for help is not an error: print the usage and exit 0.
-if (argv.length === 0 || ["help", "--help", "-h"].includes(argv[0])) {
+// Asking for help is not an error, before or after a subcommand: print the usage and exit 0.
+if (argv.length === 0 || argv[0] === "help" || argv.some((arg) => arg === "--help" || arg === "-h")) {
   console.log(usage);
   process.exit(0);
 }

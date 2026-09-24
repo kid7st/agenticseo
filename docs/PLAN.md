@@ -88,6 +88,12 @@ Full SEO capability parity with OpenSEO is the target. The initial baseline is O
 - Review dashboard-style summary and opportunity logic; expose useful computed results as CLI operations rather than rebuilding a dashboard.
 - Exercise every inventory row end to end from Pi and at least one other shell-capable agent, including mutations, exports and re-reading historical data. Publish a documented gap only for externally unavailable capabilities, then decide whether the release can honestly claim parity.
 - Before a functional release, publish an install path, contributor and security reporting guidance. Keep OpenSEO's original license notices with ported code. Verify a clean-machine install, not only a source checkout.
+- Workflow skills (6a) are done: all ten OpenSEO skills are adapted in `.agents/skills/`. On 2026-09-24 each was run once in Pi against real data, and the seven sessions cost $1.22 in total:
+  - `seo-project-setup` set up amazonseo.ai from scratch and connected Search Console and GA4.
+  - `seo-coach` answered from existing reports at no cost.
+  - `keyword-clustering`, `competitor-analysis`, `competitive-landscape`, `link-prospecting` and `local-seo` (Little Charli) each saved a report that `agenticseo reports` accepted, stayed within the user's budget ($0.05, $0.20, $0.65, $0.19 and $0.13), and follows the template, including its closing skill link.
+
+  The only CLI friction was `--help` after a subcommand exiting 2, which is fixed.
 - Exit: no required SEO row remains `not started`, `in progress` or silently skipped. The normal workflow starts with a local command, not a running OpenSEO server; a contributor can build and test it from the public repository.
 
 ## Dependencies and non-goals
