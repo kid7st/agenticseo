@@ -1,16 +1,28 @@
 {
   "name": "agenticseo",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
+  "description": "Open-source, local-first SEO for agents: OpenSEO's SEO capabilities as a CLI and agent skills.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kid7st/agenticseo.git"
+  },
   "engines": {
     "node": ">=24.14"
   },
   "bin": {
     "agenticseo": "./dist/src/cli.js"
   },
+  "files": [
+    "dist/src",
+    ".agents/skills",
+    "LICENSES"
+  ],
   "scripts": {
     "build": "tsc",
+    "prepare": "npm run build",
     "test": "node --import tsx --test test/*.test.ts",
     "check": "npm run build && npm test"
   },
