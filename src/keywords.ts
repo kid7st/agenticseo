@@ -5,7 +5,9 @@ import { fetchKeywordMetricsForList, type KeywordMetricRow } from "./openseo/dat
 import { getKeywordDataProvider } from "./openseo/keyword-locations.js";
 import { research } from "./openseo/keywords/research.js";
 import type { Market } from "./market.js";
-import type { Store } from "./store.js";
+import { upsertKeywordMetric } from "./openseo/keywords/savedKeywordsRepository.js";
+import { normalizeIntent } from "./openseo/keywords/helpers.js";
+import { transaction, type Store } from "./store.js";
 
 /** OpenSEO offers clickstream only where Labs serves the market; say so instead of ignoring the flag. */
 function assertClickstreamAvailable(market: Market, clickstream: boolean) {
@@ -24,7 +26,13 @@ function hasMetrics(row: KeywordMetricRow) {
     || row.monthlySearches.length > 0;
 }
 
-export async function keywordMetrics(market: Market, keywords: string[], options: { includeClickstreamData: boolean }) {
+/**
+ * Keyword metrics for up to 700 terms. Every row DataForSEO returned is stored as the
+ * project's latest snapshot, so saved keywords show what was just paid for. OpenSEO
+ * reaches the same state by having the agent copy these rows into save_keywords;
+ * here the CLI records what it fetched, which the agent cannot misquote.
+ */
+export async function keywordMetrics(market: Market, keywords: string[], options: { includeClickstreamData: boolean; db: Store }) {
   assertClickstreamAvailable(market, options.includeClickstreamData);
   const calls: ProviderCall[] = [];
   const allRows = await fetchKeywordMetricsForList(createDataforseoClient(calls), {
@@ -32,6 +40,21 @@ export async function keywordMetrics(market: Market, keywords: string[], options
     locationCode: market.locationCode,
     languageCode: market.languageCode,
     includeClickstreamData: options.includeClickstreamData,
+  });
+  transaction(options.db, () => {
+    for (const row of allRows) {
+      upsertKeywordMetric(options.db, {
+        keyword: row.keyword.toLowerCase(),
+        locationCode: market.locationCode,
+        languageCode: market.languageCode,
+        searchVolume: row.searchVolume,
+        cpc: row.cpc,
+        competition: row.competition,
+        keywordDifficulty: row.keywordDifficulty,
+        intent: normalizeIntent(row.intent),
+        monthlySearchesJson: JSON.stringify(row.monthlySearches),
+      });
+    }
   });
   const rows = allRows.filter(hasMetrics);
   const returned = new Set(rows.map((row) => row.keyword.toLowerCase()));
