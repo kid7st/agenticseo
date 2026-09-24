@@ -45,6 +45,15 @@ export async function withProject(check: (root: string) => Promise<void>) {
 
 export type Handler = (url: string, init: RequestInit) => Response | Promise<Response>;
 
+/** JSON request bodies are parsed; form bodies (OAuth token requests) stay text. */
+function parseBody(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
 /** Swaps global fetch (the ported client calls it directly) and records each request. */
 export async function withFetch<T>(handler: Handler, run: () => Promise<T>, apiKey = "TEST_KEY") {
   const requests: Array<{ url: string; body: unknown; authorization: string | null }> = [];
@@ -53,7 +62,7 @@ export async function withFetch<T>(handler: Handler, run: () => Promise<T>, apiK
   process.env.DATAFORSEO_API_KEY = apiKey;
   globalThis.fetch = async (input, init = {}) => {
     const url = String(input);
-    requests.push({ url, body: init.body == null ? undefined : JSON.parse(String(init.body)), authorization: new Headers(init.headers).get("Authorization") });
+    requests.push({ url, body: init.body == null ? undefined : parseBody(String(init.body)), authorization: new Headers(init.headers).get("Authorization") });
     return handler(url, init);
   };
   try {

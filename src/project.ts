@@ -21,10 +21,18 @@ import { isLanguageServedForLocation, isSupportedLanguageCode, isSupportedLocati
 import { parseResearchTarget } from "./openseo/researchScope.js";
 
 // The market is checked on every read too, since people edit project.json by hand.
+const googleConnectionSchema = z.strictObject({
+  accountId: z.string().min(1),
+  accountEmail: z.string().nullable(),
+});
+
 const projectSchema = z.strictObject({
   domain: z.string().min(1),
   locationCode: z.number().int().refine(isSupportedLocationCode, "Unsupported DataForSEO location code"),
   languageCode: z.string().refine(isSupportedLanguageCode, "Unsupported language code"),
+  // OpenSEO's per-project property mapping (gsc_connections). The Google grant
+  // itself lives in the user's config directory, never in the project.
+  searchConsole: googleConnectionSchema.extend({ siteUrl: z.string().min(1) }).optional(),
 }).refine((project) => isLanguageServedForLocation(project.locationCode, project.languageCode), {
   message: "This language is not available for this location",
   path: ["languageCode"],
@@ -137,6 +145,14 @@ export async function readProject(root: string): Promise<Project> {
   const project = await readState(projectFile(root), projectSchema);
   if (!project) throw new OperationError("input", `No AgenticSEO project at ${root}; run 'agenticseo init' there`);
   return project;
+}
+
+/** Rewrites project.json after validating it; used for settings the CLI manages. */
+export async function writeProject(root: string, project: Project) {
+  const valid = validate(projectSchema, project, "Project settings");
+  const file = projectFile(root);
+  await writeFile(`${file}.tmp`, `${JSON.stringify(valid, null, 2)}\n`);
+  await rename(`${file}.tmp`, file);
 }
 
 export async function initProject(root: string, input: { domain?: string; locationCode: number; languageCode: string }) {

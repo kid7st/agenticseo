@@ -34,7 +34,7 @@ Deliver through the `seo-report` skill. If that skill is unavailable, say so and
 - `agenticseo keywords TERM...` and `agenticseo research "SEED"`: demand for the queries a candidate page targets. One focused metrics batch usually suffices; one research call per seed, one to three seeds, when a demand gap could change the decision.
 - Web reading (fetch, scrape or search): the site's own pages, sitemap, the leading results for a query, and competitor pages.
 
-Search Console data is not available in AgenticSEO yet: first-party clicks and impressions are a coverage gap to state, not a blocker.
+- `agenticseo gsc report` and `agenticseo gsc performance --dimensions query,page --min-position 5 --max-position 20 --min-impressions 50`: when Search Console is connected for the project (the commands exit 2 when it is not), first-party clicks and impressions separate low visibility from low click-through, and show which page Google pairs with each query. `agenticseo gsc inspect URL...` answers whether a page is indexed and which canonical Google chose. Missing access is a coverage gap to state, not a blocker; exit code 3 means the Google grant needs `agenticseo google connect` again.
 
 Every paid result states its source, date, market and `costUsd`, and points to an evidence file; read rows from that file instead of rerunning a paid command. Research until another lookup is unlikely to change which opportunities lead. Respect an explicit user budget and say which comparison it prevented.
 

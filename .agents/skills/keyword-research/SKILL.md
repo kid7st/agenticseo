@@ -38,7 +38,7 @@ Every result states `source`, date, market and `costUsd`, and points to an `evid
 - `agenticseo rank create`, then `agenticseo rank add TRACKER_ID KEYWORD...`: track the chosen keywords' Google positions for the project domain, when the user wants to follow them over time. Run `agenticseo rank estimate TRACKER_ID` and show the cost before `agenticseo rank run` or before setting `--schedule daily|weekly|monthly`. A schedule only runs once the user adds the line from `agenticseo rank schedule` to their system scheduler. Read results with `agenticseo rank show TRACKER_ID`.
 - `agenticseo query "SELECT ..."`: read-only SQL over saved keywords and stored metrics when a question needs a join or aggregate, for example the highest-volume saved keywords per tag. Select only the columns and rows you need.
 
-Not available yet in AgenticSEO: Search Console data. Say so when the task needs it; do not approximate it.
+- `agenticseo gsc performance --dimensions query,page --min-position 5 --max-position 20 --min-impressions 50`: when Search Console is connected for the project, start from its real first-party demand: queries already earning impressions whose best page sits in "striking distance". Then run `agenticseo keywords` on those queries to attach difficulty and intent; that ranked list is the fastest opportunity set, so work it before broad discovery. Exit code 2 means it is not connected (skip it and say so); 3 means the Google grant needs reconnecting.
 
 ## Workflow
 
