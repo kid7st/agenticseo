@@ -147,6 +147,7 @@ export async function scheduleLine(root: string) {
       "Add the line with `crontab -e` (macOS and Linux). On Windows, create an hourly Task Scheduler task that runs the same command in the project directory.",
       "Cron does not read your shell profile: DATAFORSEO_API_KEY must be defined for the job, for example as a DATAFORSEO_API_KEY=... line above it in the crontab. AgenticSEO does not store the key.",
       "Each call checks every tracker that is due and finishes interrupted scheduled checks; an hourly call is enough for daily, weekly and monthly schedules.",
+      "The line pins this Node binary and CLI path; run agenticseo rank schedule again after upgrading or moving either.",
     ],
   };
 }

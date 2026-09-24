@@ -91,8 +91,11 @@ describe("rank trackers", () => {
           scheduledEstimate: { scheduleInterval: "weekly", costUsd: 0.195, checksPerMonth: 4, monthlyCostUsd: 0.78 },
         },
       );
+      const daily = await updateTracker(root, config.id, { scheduleInterval: "daily" });
+      assert.deepEqual(daily.scheduledEstimate, { scheduleInterval: "daily", costUsd: 0.0078, checksPerMonth: 30, monthlyCostUsd: 0.234 }, "turning a schedule on shows its recurring cost");
       const manual = await updateTracker(root, config.id, { scheduleInterval: "manual" });
       assert.equal(manual.config.nextCheckAt, null);
+      assert.equal(manual.scheduledEstimate, undefined);
       assert.equal((await estimateTracker(root, config.id, 0)).scheduledEstimate, undefined);
     });
   });
