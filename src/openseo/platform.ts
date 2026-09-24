@@ -12,6 +12,7 @@ export type ErrorCode =
   | "UPSTREAM_UNAVAILABLE"
   | "BACKLINKS_BILLING_ISSUE"
   | "AHREFS_AUTH_FAILED"
+  | "CRAWL_TARGET_BLOCKED"
   | "INTERNAL_ERROR";
 
 // INTERNAL_ERROR from provider code means DataForSEO returned something we
@@ -25,6 +26,8 @@ const kinds: Record<ErrorCode, OperationError["kind"]> = {
   // The user's DataForSEO balance: they fix it with DataForSEO, like any provider-side failure.
   BACKLINKS_BILLING_ISSUE: "provider",
   AHREFS_AUTH_FAILED: "credentials",
+  // An audit start URL the safety policy refuses: the user picks another target.
+  CRAWL_TARGET_BLOCKED: "input",
   INTERNAL_ERROR: "provider",
 };
 
