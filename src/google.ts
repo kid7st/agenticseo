@@ -338,7 +338,7 @@ async function googleFetch(url: string, init: RequestInit) {
     return await fetch(url, init);
   } catch (error) {
     const cause = error instanceof Error ? (error.cause instanceof Error ? error.cause.message : error.message) : String(error);
-    throw new OperationError("provider", `Could not reach Google (${cause}); behind a proxy, set NODE_USE_ENV_PROXY=1`, { cause: error });
+    throw new OperationError("provider", `Could not reach Google (${cause}); behind a proxy, set HTTPS_PROXY`, { cause: error });
   }
 }
 

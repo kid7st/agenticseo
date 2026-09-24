@@ -21,8 +21,8 @@ export function runCli(cwd: string, args: string[], { env = {}, mock = false }: 
 }
 
 /** runCli without blocking the event loop, for tests that serve HTTP from the test process. */
-export async function runCliAsync(cwd: string, args: string[]) {
-  const child = spawn(process.execPath, ["--import", tsx, cli, ...args], { cwd, env: { ...process.env, DATAFORSEO_API_KEY: "" } });
+export async function runCliAsync(cwd: string, args: string[], env: Record<string, string> = {}) {
+  const child = spawn(process.execPath, ["--import", tsx, cli, ...args], { cwd, env: { ...process.env, DATAFORSEO_API_KEY: "", ...env } });
   let stdout = "";
   let stderr = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
