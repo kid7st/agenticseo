@@ -52,7 +52,13 @@ export async function useAnalyticsProperty(root: string, input: { propertyId: st
   const holders = [];
   for (const account of accounts) {
     const client = createGa4AdminClient({ userId: "local", ga4AccountId: account.accountId });
-    if ((await client.listProperties()).some((property) => property.propertyId === propertyId)) holders.push({ account, client });
+    let properties;
+    try {
+      properties = await client.listProperties();
+    } catch (error) {
+      mapGa4ReportError(error);
+    }
+    if (properties.some((property) => property.propertyId === propertyId)) holders.push({ account, client });
   }
   if (holders.length === 0) throw new OperationError("input", `${propertyId} isn't available on the connected Google account(s); run agenticseo ga4 properties`);
   if (holders.length > 1) {

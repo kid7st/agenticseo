@@ -103,6 +103,8 @@ describe("Google Analytics", () => {
         assert.deepEqual(result.accounts[0].properties, [{ propertyId: "properties/123", displayName: "kua.ai", accountDisplayName: "Kua" }]);
         await withFetch(google(), () => assert.rejects(useAnalyticsProperty(root, { propertyId: "999" }), failsWith("input", /isn't available/)));
         await assert.rejects(analyticsReport(root, "landing-pages", {}), failsWith("input", /not connected for this project\. Run agenticseo ga4 properties/));
+        const adminDown = (url: string, init: RequestInit) => (url.startsWith(`${ADMIN}/v1beta/accountSummaries`) ? new Response("unavailable", { status: 503 }) : google()(url, init));
+        await withFetch(adminDown, () => assert.rejects(useAnalyticsProperty(root, { propertyId: "123" }), failsWith("provider", /temporarily unavailable/)));
         await withFetch(google(), () => useAnalyticsProperty(root, { propertyId: "123" }));
         assert.deepEqual((await readProject(root)).analytics, {
           propertyId: "properties/123",

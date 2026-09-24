@@ -111,7 +111,7 @@ function oauthClient() {
  * invalid_client, a valid pair answers invalid_grant for the code.
  */
 async function assertClientKnown(clientId: string, clientSecret: string) {
-  const response = await fetch(GOOGLE_TOKEN_URL, {
+  const response = await googleFetch(GOOGLE_TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, grant_type: "authorization_code", code: "agenticseo-client-check", redirect_uri: "http://127.0.0.1" }),
@@ -204,7 +204,7 @@ export async function connectGoogle(input: { products: GoogleProduct[]; openUrl:
     await input.openUrl(url.toString());
   });
 
-  const response = await fetch(GOOGLE_TOKEN_URL, {
+  const response = await googleFetch(GOOGLE_TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ code, client_id: clientId, client_secret: clientSecret, redirect_uri: redirectUri, grant_type: "authorization_code", code_verifier: verifier }),
@@ -307,7 +307,7 @@ export async function googleAccessToken(accountId: string, product: GoogleProduc
   }
   if (account.accessToken && (account.accessTokenExpiresAt ?? 0) > Date.now() + 60_000) return account.accessToken;
 
-  const response = await fetch(GOOGLE_TOKEN_URL, {
+  const response = await googleFetch(GOOGLE_TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ client_id: account.clientId, client_secret: account.clientSecret, refresh_token: account.refreshToken, grant_type: "refresh_token" }),
@@ -332,6 +332,16 @@ export async function googleAccessToken(accountId: string, product: GoogleProduc
   return refreshed.accessToken!;
 }
 
+/** Google's OAuth endpoints; a network failure is a provider error with its cause, not a crash. */
+async function googleFetch(url: string, init: RequestInit) {
+  try {
+    return await fetch(url, init);
+  } catch (error) {
+    const cause = error instanceof Error ? (error.cause instanceof Error ? error.cause.message : error.message) : String(error);
+    throw new OperationError("provider", `Could not reach Google (${cause}); behind a proxy, set NODE_USE_ENV_PROXY=1`, { cause: error });
+  }
+}
+
 /** Google's OAuth error as one line ("invalid_grant: Bad Request"), or the raw body when it is not JSON. */
 function oauthErrorReason(body: string) {
   try {
@@ -346,7 +356,7 @@ function oauthErrorReason(body: string) {
 export async function disconnectGoogle(reference: string) {
   const { accounts, account } = await findAccount(reference);
   if (!account) throw new OperationError("input", `No connected Google account ${reference}; see agenticseo google accounts`);
-  const response = await fetch(`${GOOGLE_REVOKE_URL}?${new URLSearchParams({ token: account.refreshToken })}`, { method: "POST" });
+  const response = await googleFetch(`${GOOGLE_REVOKE_URL}?${new URLSearchParams({ token: account.refreshToken })}`, { method: "POST" });
   await writeStore(accounts.filter((candidate) => candidate.accountId !== account.accountId));
   return {
     accountId: account.accountId,

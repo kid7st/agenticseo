@@ -86,7 +86,7 @@ Full SEO capability parity with OpenSEO is the target. The initial baseline is O
 
 - Extend the task-skill pattern established in Phase 1 to OpenSEO's public workflows: project setup, audits, keyword research/clustering, competitive work, local SEO, link prospecting and report writing. Preserve their decision-making intent without requiring MCP or OpenSEO's in-app chat.
 - Review dashboard-style summary and opportunity logic; expose useful computed results as CLI operations rather than rebuilding a dashboard.
-- Exercise every inventory row end to end from Pi and at least one other shell-capable agent, including mutations, exports and re-reading historical data. Publish a documented gap only for externally unavailable capabilities, then decide whether the release can honestly claim parity.
+- Exercise every inventory row end to end from Pi, including mutations, exports and re-reading historical data. A second agent client is not part of this phase; PRODUCT.md records that only Pi is verified. Publish a documented gap only for externally unavailable capabilities, then decide whether the release can honestly claim parity.
 - Before a functional release, publish an install path, contributor and security reporting guidance. Keep OpenSEO's original license notices with ported code. Verify a clean-machine install, not only a source checkout.
 - Workflow skills (6a) are done: all ten OpenSEO skills are adapted in `.agents/skills/`. On 2026-09-24 each was run once in Pi against real data, and the seven sessions cost $1.22 in total:
   - `seo-project-setup` set up amazonseo.ai from scratch and connected Search Console and GA4.
@@ -95,6 +95,13 @@ Full SEO capability parity with OpenSEO is the target. The initial baseline is O
 
   The only CLI friction was `--help` after a subcommand exiting 2, which is fixed.
 - Dashboard (6b) is `agenticseo overview`, checked on kua.ai: the free read returned every card, and a backlink refresh cost $0.024, with a repeat on the same day making no call.
+- Parity review (6c): the review found no upstream MCP tool, server function or skill without a local command, and closed four smaller gaps:
+  - bulk `research` (1–5 seeds) and `serp` (1–10 queries), as OpenSEO's tools batch them;
+  - `research --mode`;
+  - `domain-keywords`, the app's keywords tab;
+  - the Lighthouse download.
+
+  A live pass on 2026-09-24 ran every command on a fresh project against DataForSEO, Search Console and GA4 for about $1.20. It read back every mutation (context, research log, saved keywords and tags, trackers, audits, Google connections) and checked every export file. It found two exit-code defects, both fixed: `ga4 use` crashed with exit 1 when the Admin API failed, and so did a Google token request that could not reach Google (now exit 4, with a proxy hint). 41 of 42 rows are `verified`; Ahrefs Domain Rating waits for a key to check the success path.
 - Exit: no required SEO row remains `not started`, `in progress` or silently skipped. The normal workflow starts with a local command, not a running OpenSEO server; a contributor can build and test it from the public repository.
 
 ## Dependencies and non-goals
