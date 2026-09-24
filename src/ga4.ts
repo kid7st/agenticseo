@@ -22,19 +22,22 @@ const analyticsAccounts = async () => (await listGoogleAccounts()).filter((accou
 export async function analyticsProperties() {
   const accounts = await analyticsAccounts();
   if (accounts.length === 0) throw new OperationError("credentials", "No Google account is connected for Google Analytics; run agenticseo google connect --for analytics");
-  return {
-    accounts: await Promise.all(
-      accounts.map(async (account) => {
-        try {
-          const properties = await createGa4AdminClient({ userId: "local", ga4AccountId: account.accountId }).listProperties();
-          return { accountId: account.accountId, email: account.email, requiresReconnect: false, properties };
-        } catch (error) {
-          const requiresReconnect = (error instanceof OperationError && error.kind === "credentials") || (error instanceof Ga4AdminApiError && error.status === 401);
-          return { accountId: account.accountId, email: account.email, requiresReconnect, error: error instanceof Error ? error.message : String(error), properties: [] };
-        }
-      }),
-    ),
-  };
+  const failures: unknown[] = [];
+  const listed = await Promise.all(
+    accounts.map(async (account) => {
+      try {
+        const properties = await createGa4AdminClient({ userId: "local", ga4AccountId: account.accountId }).listProperties();
+        return { accountId: account.accountId, email: account.email, requiresReconnect: false, properties };
+      } catch (error) {
+        failures.push(error);
+        const requiresReconnect = (error instanceof OperationError && error.kind === "credentials") || (error instanceof Ga4AdminApiError && error.status === 401);
+        return { accountId: account.accountId, email: account.email, requiresReconnect, error: error instanceof Error ? error.message : String(error), properties: [] };
+      }
+    }),
+  );
+  // As for Search Console sites: when no account can list anything, fail with the reason.
+  if (failures.length === accounts.length) mapGa4ReportError(failures[0]);
+  return { accounts: listed };
 }
 
 /** Map a GA4 property (properties/123 or 123) to this project, recording its time zone and currency. */

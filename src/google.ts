@@ -313,12 +313,12 @@ export async function googleAccessToken(accountId: string, product: GoogleProduc
     body: new URLSearchParams({ client_id: account.clientId, client_secret: account.clientSecret, refresh_token: account.refreshToken, grant_type: "refresh_token" }),
   });
   if (!response.ok) {
-    const body = await response.text();
+    const reason = oauthErrorReason(await response.text());
     // invalid_grant: the user revoked access, or a Testing-mode app's grant expired after 7 days.
     if (response.status === 400 || response.status === 401) {
-      throw new OperationError("credentials", `Google access for ${account.email ?? account.accountId} was revoked or has expired (${body.slice(0, 200)}); ${reconnect}`);
+      throw new OperationError("credentials", `Google access for ${account.email ?? account.accountId} was revoked or has expired (${reason}); ${reconnect}`);
     }
-    throw new OperationError("provider", `Google token refresh failed (HTTP ${response.status}): ${body.slice(0, 200)}`);
+    throw new OperationError("provider", `Google token refresh failed (HTTP ${response.status}): ${reason}`);
   }
   const tokens = tokenResponseSchema.parse(await response.json());
   const refreshed: StoredAccount = {
@@ -330,6 +330,16 @@ export async function googleAccessToken(accountId: string, product: GoogleProduc
   };
   await writeStore(accounts.map((candidate) => (candidate.accountId === account.accountId ? refreshed : candidate)));
   return refreshed.accessToken!;
+}
+
+/** Google's OAuth error as one line ("invalid_grant: Bad Request"), or the raw body when it is not JSON. */
+function oauthErrorReason(body: string) {
+  try {
+    const parsed = z.object({ error: z.string(), error_description: z.string().optional() }).parse(JSON.parse(body));
+    return parsed.error_description ? `${parsed.error}: ${parsed.error_description}` : parsed.error;
+  } catch {
+    return body.slice(0, 200);
+  }
 }
 
 /** Revoke the grant at Google and forget it; a grant Google already dropped is still removed here. */

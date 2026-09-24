@@ -126,7 +126,7 @@ describe("Google authorization", () => {
       await import("node:fs/promises").then((fs) => fs.writeFile(file, JSON.stringify(expired)));
       await withFetch(
         () => Response.json({ error: "invalid_grant", error_description: "Token has been expired or revoked." }, { status: 400 }),
-        () => assert.rejects(googleAccessToken("google-sub-1", "searchConsole"), credentials("credentials", /revoked or has expired .*run agenticseo google connect/)),
+        () => assert.rejects(googleAccessToken("google-sub-1", "searchConsole"), credentials("credentials", /revoked or has expired \(invalid_grant: Token has been expired or revoked\.\); run agenticseo google connect/)),
       );
     });
   });
@@ -245,9 +245,28 @@ describe("Search Console", () => {
           errors: [{ reason: "accessNotConfigured" }],
         },
       });
-      const { result } = await withFetch(() => new Response(disabled, { status: 403 }), () => searchConsoleSites());
-      assert.equal(result.accounts[0].requiresReconnect, false);
-      assert.match(result.accounts[0].error ?? "", /has not been used in project 1 .* Enable it by visiting/);
+      await withFetch(
+        () => new Response(disabled, { status: 403 }),
+        () => assert.rejects(searchConsoleSites(), credentials("provider", /has not been used in project 1 .* Enable it by visiting/)),
+      );
+    });
+  });
+
+  it("lists the accounts that work when another fails, and fails when none can list", async () => {
+    await withGoogleHome(async (home) => {
+      await connected();
+      const file = join(home, "agenticseo", "google-accounts.json");
+      const store = JSON.parse(await readFile(file, "utf8"));
+      store.accounts.push({ ...store.accounts[0], accountId: "google-sub-2", email: "agency@kua.ai", accessToken: "access-2" });
+      await import("node:fs/promises").then((fs) => fs.writeFile(file, JSON.stringify(store)));
+      const sites = (url: string, init: RequestInit) =>
+        new Headers(init.headers).get("Authorization") === "Bearer access-2" ? new Response("{}", { status: 403 }) : searchConsole()(url, init);
+      const { result } = await withFetch(sites, () => searchConsoleSites());
+      assert.deepEqual(result.accounts.map((account) => [account.email, account.sites.length, account.requiresReconnect]), [
+        ["owner@kua.ai", 2, false],
+        ["agency@kua.ai", 0, true],
+      ]);
+      await withFetch(() => new Response("{}", { status: 403 }), () => assert.rejects(searchConsoleSites(), credentials("credentials", /denied access/)));
     });
   });
 
