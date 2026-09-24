@@ -65,3 +65,23 @@ export function marketForCall(project: Market, overrides: { location?: string; l
 export function languageForCall(project: Market, language: string | undefined) {
   return language ? parseLanguage(language) : project.languageCode;
 }
+
+/**
+ * The market for a rank tracker. As OpenSEO's tracker schema allows, the SERP API
+ * serves any supported language in any country, so the pair is not checked against
+ * the keyword-data language table.
+ */
+export function serpMarketForCall(project: Market, overrides: { location?: string; language?: string }): Market {
+  return resolveMarket(
+    {
+      locationCode: overrides.location ? parseLocation(overrides.location) : undefined,
+      languageCode: overrides.language ? parseLanguage(overrides.language) : undefined,
+    },
+    project,
+  );
+}
+
+/** The ISO country code ("us") for a --location value, or the project's country. */
+export function countryForCall(project: Market, location: string | undefined) {
+  return getIsoCountryCode(location ? parseLocation(location) : project.locationCode);
+}

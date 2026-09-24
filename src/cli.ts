@@ -7,7 +7,9 @@ import { backlinksDomains, backlinksLinks, backlinksOverview, backlinksPages, do
 import { domainOverview, domainPages, rankedKeywords, serpCompetitors } from "./domain.js";
 import { keywordMetrics, researchKeywords, serpResults } from "./keywords.js";
 import { localBusinesses, localCategories, localPosts, localProfile, localQuestions, localRankGrid, localReviews, localSerp } from "./local.js";
-import { languageForCall, marketForCall, marketForNewProject } from "./market.js";
+import { countryForCall, languageForCall, marketForCall, marketForNewProject, serpMarketForCall } from "./market.js";
+import { addTrackerKeywords, createTracker, estimateTracker, listTrackers, removeTrackerKeywords, searchLocations, showTracker, updateTracker } from "./rank.js";
+import { MAX_KEYWORDS_PER_CONFIG } from "./openseo/shared/rank-tracking.js";
 import { PAGE_FETCH_CLASSES } from "./openseo/shared/audit-fetch-class.js";
 import { LIGHTHOUSE_CATEGORIES } from "./openseo/shared/lighthouse.js";
 import { DEFAULT_AUDIT_PAGES, MIN_AUDIT_PAGES, PAID_MAX_AUDIT_PAGES } from "./openseo/shared/audit-limits.js";
@@ -81,6 +83,16 @@ BUSINESS is one of --name TEXT, --cid ID or --place-id ID; TARGET is any of --ci
   agenticseo audit export [ID] [--table issues|pages|performance] [--format csv|jsonl] [--out FILE] [--project DIR]
   agenticseo audit list [--project DIR]
   agenticseo audit delete ID [--project DIR]
+  agenticseo rank create [DOMAIN] [MARKET] [--location-name NAME] [TRACKER_SETTINGS] [--project DIR]
+  agenticseo rank update ID [--domain DOMAIN] [MARKET] [--location-name NAME|none] [TRACKER_SETTINGS] [--project DIR]
+  agenticseo rank list [--project DIR]
+  agenticseo rank show ID [--project DIR]
+  agenticseo rank archive ID [--project DIR]
+  agenticseo rank add ID KEYWORD... [--match-case] [--project DIR]
+  agenticseo rank remove ID KEYWORD_ID... [--project DIR]
+  agenticseo rank estimate ID [--add N] [--project DIR]
+  agenticseo rank locations "PLACE" [--location COUNTRY] [--project DIR]
+TRACKER_SETTINGS: --devices mobile|desktop|both --depth 10-100 (multiple of 10) --schedule manual|daily|weekly|monthly
   agenticseo query "SELECT ..." [--project DIR]
 MARKET overrides the project's market for one call: --location US|2840 [--language en]
 FILTERS: --search TEXT --include TERM,... --exclude TERM,... --tags TAG,... --min-volume N --max-volume N
@@ -686,6 +698,74 @@ async function run([command, ...args]: string[]): Promise<unknown> {
       const [id, token] = positionals(args, "audit id and worker token", 2);
       await runAuditWorker(root, id, token);
       return auditStatus(root, id);
+    }
+    throw new OperationError("input", usage);
+  }
+
+  if (command === "rank") {
+    const [action, ...rest] = args;
+    args = rest;
+    const root = await findProjectRoot(projectOption);
+    const settings = () => {
+      const depth = intOption(args, "--depth", 10, 100);
+      if (depth !== undefined && depth % 10 !== 0) throw new OperationError("input", "--depth must be a multiple of 10");
+      return {
+        devices: enumOption(args, "--devices", ["mobile", "desktop", "both"] as const),
+        serpDepth: depth,
+        scheduleInterval: enumOption(args, "--schedule", ["manual", "daily", "weekly", "monthly"] as const),
+      };
+    };
+    const trackerId = () => {
+      const id = args.shift();
+      if (!id || id.startsWith("--")) throw new OperationError("input", `Provide a tracker id (see agenticseo rank list)\n${usage}`);
+      return id;
+    };
+    if (action === "create") {
+      const project = await readProject(root);
+      const market = serpMarketForCall(project, { location: option(args, "--location"), language: option(args, "--language") });
+      const input = { ...market, locationName: option(args, "--location-name"), ...settings() };
+      const domain = args.length ? positionals(args, "domain", 1)[0] : project.domain;
+      return createTracker(root, { ...input, domain });
+    }
+    if (action === "update") {
+      const id = trackerId();
+      const project = await readProject(root);
+      const location = option(args, "--location");
+      const language = option(args, "--language");
+      const locationName = option(args, "--location-name");
+      const market = location || language ? serpMarketForCall(project, { location, language }) : {};
+      const input = { domain: option(args, "--domain"), ...market, locationName: locationName === "none" ? null : locationName, ...settings() };
+      rejectUnknown(args);
+      return updateTracker(root, id, input);
+    }
+    if (action === "list") {
+      rejectUnknown(args);
+      return listTrackers(root);
+    }
+    if (action === "show" || action === "archive") {
+      const id = trackerId();
+      rejectUnknown(args);
+      return action === "show" ? showTracker(root, id) : updateTracker(root, id, { isActive: false });
+    }
+    if (action === "add") {
+      const id = trackerId();
+      const matchCase = flag(args, "--match-case");
+      return addTrackerKeywords(root, id, positionals(args, "keywords", MAX_KEYWORDS_PER_CONFIG), matchCase);
+    }
+    if (action === "remove") {
+      const id = trackerId();
+      return removeTrackerKeywords(root, id, positionals(args, "keyword ids", MAX_KEYWORDS_PER_CONFIG));
+    }
+    if (action === "estimate") {
+      const id = trackerId();
+      const additional = intOption(args, "--add", 0, MAX_KEYWORDS_PER_CONFIG) ?? 0;
+      rejectUnknown(args);
+      return estimateTracker(root, id, additional);
+    }
+    if (action === "locations") {
+      const project = await readProject(root);
+      const country = countryForCall(project, option(args, "--location"));
+      return searchLocations(root, singlePhrase(args, "place name"), country);
     }
     throw new OperationError("input", usage);
   }

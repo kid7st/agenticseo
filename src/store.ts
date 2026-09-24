@@ -157,6 +157,78 @@ const migrations = [
      fetched_at TEXT NOT NULL
    );
    CREATE INDEX audit_lighthouse_results_audit_id_idx ON audit_lighthouse_results (audit_id);`,
+  // Rank tracking follows OpenSEO's src/db/app.schema.ts. rank_check_runs also records
+  // the local process that owns a running check, and rank_check_tasks keeps each
+  // queued DataForSEO task id, so a scheduled check interrupted after paying for its
+  // tasks can collect them later instead of posting them again.
+  `CREATE TABLE rank_tracking_configs (
+     id TEXT PRIMARY KEY,
+     domain TEXT NOT NULL,
+     location_code INTEGER NOT NULL,
+     language_code TEXT NOT NULL,
+     location_name TEXT,
+     devices TEXT NOT NULL CHECK (devices IN ('desktop', 'mobile', 'both')),
+     serp_depth INTEGER NOT NULL,
+     schedule_interval TEXT NOT NULL CHECK (schedule_interval IN ('manual', 'daily', 'weekly', 'monthly')),
+     is_active INTEGER NOT NULL DEFAULT 1,
+     last_checked_at TEXT,
+     next_check_at TEXT,
+     last_skip_reason TEXT,
+     created_at TEXT NOT NULL
+   );
+   CREATE UNIQUE INDEX rank_tracking_configs_national_idx ON rank_tracking_configs (domain, location_code) WHERE location_name IS NULL;
+   CREATE UNIQUE INDEX rank_tracking_configs_local_idx ON rank_tracking_configs (domain, location_code, location_name) WHERE location_name IS NOT NULL;
+   CREATE TABLE rank_tracking_keywords (
+     id TEXT PRIMARY KEY,
+     config_id TEXT NOT NULL REFERENCES rank_tracking_configs (id) ON DELETE CASCADE,
+     keyword TEXT NOT NULL,
+     match_case INTEGER NOT NULL DEFAULT 0,
+     search_volume INTEGER,
+     keyword_difficulty INTEGER,
+     cpc REAL,
+     metrics_fetched_at TEXT,
+     created_at TEXT NOT NULL,
+     UNIQUE (config_id, keyword)
+   );
+   CREATE TABLE rank_check_runs (
+     id TEXT PRIMARY KEY,
+     config_id TEXT NOT NULL REFERENCES rank_tracking_configs (id) ON DELETE CASCADE,
+     status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'failed')),
+     trigger TEXT NOT NULL CHECK (trigger IN ('manual', 'scheduled')),
+     keywords_total INTEGER NOT NULL DEFAULT 0,
+     keywords_checked INTEGER NOT NULL DEFAULT 0,
+     is_subset_run INTEGER NOT NULL DEFAULT 0,
+     error_message TEXT,
+     cost_usd REAL NOT NULL DEFAULT 0,
+     worker_pid INTEGER,
+     heartbeat_at TEXT,
+     started_at TEXT NOT NULL,
+     completed_at TEXT
+   );
+   CREATE INDEX rank_check_runs_config_idx ON rank_check_runs (config_id, started_at);
+   CREATE UNIQUE INDEX rank_check_runs_one_active_per_config_idx ON rank_check_runs (config_id) WHERE status = 'running';
+   CREATE TABLE rank_snapshots (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     run_id TEXT NOT NULL REFERENCES rank_check_runs (id) ON DELETE CASCADE,
+     tracking_keyword_id TEXT NOT NULL,
+     keyword TEXT NOT NULL,
+     device TEXT NOT NULL CHECK (device IN ('desktop', 'mobile')),
+     position INTEGER,
+     url TEXT,
+     serp_features TEXT,
+     checked_at TEXT NOT NULL,
+     UNIQUE (run_id, tracking_keyword_id, device)
+   );
+   CREATE INDEX rank_snapshots_keyword_device_idx ON rank_snapshots (tracking_keyword_id, device, checked_at);
+   CREATE TABLE rank_check_tasks (
+     run_id TEXT NOT NULL REFERENCES rank_check_runs (id) ON DELETE CASCADE,
+     tracking_keyword_id TEXT NOT NULL,
+     keyword TEXT NOT NULL,
+     device TEXT NOT NULL CHECK (device IN ('desktop', 'mobile')),
+     task_id TEXT NOT NULL,
+     posted_at TEXT NOT NULL,
+     PRIMARY KEY (run_id, tracking_keyword_id, device)
+   );`,
 ];
 
 export const databaseFile = (directory: string) => join(directory, "agenticseo.db");
