@@ -65,7 +65,22 @@ Full SEO capability parity with OpenSEO is the target. The initial baseline is O
 
 - Support initial GSC and GA4 authorization, token refresh, property selection, performance/inspection and analytics operations. Keep credentials out of project artifacts.
 - Port AI brand/mention lookup, cited sources and prompt exploration from application-only endpoints, including source- and platform-specific availability limits.
-- Exit: authorized sample projects yield comparable first-party and AI-visibility outputs; revoked access produces a useful error, never a fabricated empty result.
+- Exit: authorized sample projects yield comparable first-party and AI-visibility outputs; revoked access produces a useful error, never a fabricated empty result. **Complete** (2026-09-24, Pi): the user created a Desktop OAuth client and connected kid7st@gmail.com with `google connect`. Search Console `sc-domain:kua.ai` and GA4 `properties/369400289` were selected, and every command ran on their live data. In one Pi task that allowed free first-party data only, the agent:
+  - compared 28 days of Search Console clicks (811, down 25%) with GA4;
+  - found GA4 recording 27 organic sessions, all on `app.kua.ai`, with no key events;
+  - traced this to a Google Tag Manager snippet on kua.ai that never runs;
+  - saved a Chinese report with an HTML export.
+
+  It made no DataForSEO call. AI visibility was verified live separately: a brand lookup with two competitors ($0.839) and four models on one prompt ($0.153).
+
+  Revoked access was checked on a copy of the credentials with an invalid refresh token. Every Search Console and Analytics command exits 3 with Google's one-line reason and the reconnect command; none returns an empty result.
+
+  Setting up the connection found five defects, all fixed:
+  - a malformed client ID reached Google's consent page;
+  - an unknown client failed only in the browser;
+  - a Cloud project without the APIs enabled was reported as generic denied access, with a reconnect hint;
+  - listings exited 0 when no account could list anything;
+  - `--help` exited 2.
 
 ## Phase 6 — Agent workflows and full parity review
 
