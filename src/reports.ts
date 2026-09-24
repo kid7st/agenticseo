@@ -51,10 +51,22 @@ async function readDocuments(directory: string, names: string[]) {
   return documents;
 }
 
+// OpenSEO's report viewer blocks scripts and every external request; a local export is
+// opened straight in a browser, so the same rules are checked here to keep it
+// self-contained, printable and safe to share.
+const EXTERNAL_RESOURCES: Array<[RegExp, string]> = [
+  [/<script\b/i, "contains a <script>; reports must be static"],
+  [/<link\b[^>]*\bhref\s*=\s*["']?(https?:)?\/\//i, "loads a stylesheet or font from another site; inline all CSS"],
+  [/@import\b/i, "uses @import; inline all CSS"],
+  [/\b(src|srcset|poster)\s*=\s*["']?(https?:)?\/\//i, "loads an image or media file from another site; inline it as SVG or a data: URL"],
+  [/url\(\s*["']?(https?:)?\/\//i, "loads a CSS resource from another site; inline it"],
+];
+
 async function checkHtml(file: string) {
   const text = await readFile(file, "utf8");
   if (Buffer.byteLength(text) > maxHtmlBytes) throw invalid(file, `is larger than ${maxHtmlBytes} bytes`);
   if (!/<\/html>\s*$/i.test(text)) throw invalid(file, "is not a complete HTML document ending in </html>");
+  for (const [pattern, problem] of EXTERNAL_RESOURCES) if (pattern.test(text)) throw invalid(file, problem);
   return file;
 }
 

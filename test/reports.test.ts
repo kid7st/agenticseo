@@ -20,7 +20,8 @@ test("reports lists saved reports newest first with previews and HTML exports", 
     await mkdir(reports, { recursive: true });
     await writeFile(join(reports, "audit.md"), report("Site Audit — Sep 1, 2026", "Verdict: fix canonicals first."));
     await writeFile(join(reports, "keywords.md"), report("Keyword Snapshot — Sep 23, 2026", "x".repeat(300)));
-    await writeFile(join(reports, "keywords.html"), "<!doctype html><html><body>Report</body></html>\n");
+    // Links to other sites are fine; only loading resources from them is refused.
+    await writeFile(join(reports, "keywords.html"), '<!doctype html><html><body><a href="https://kua.ai/" target="_blank">Report</a><svg viewBox="0 0 1 1"></svg><a href="#how">x</a></body></html>\n');
     await utimes(join(reports, "audit.md"), new Date("2026-09-01"), new Date("2026-09-01"));
 
     const listed = runCli(root, ["reports"]);
@@ -44,6 +45,11 @@ test("reports refuses malformed, duplicate and orphaned documents with the input
       ["duplicate title", { "a.md": report("Audit", "One."), "b.md": report("audit", "Two.") }, /same title/],
       ["orphan html", { "a.md": report("Audit", "One."), "b.html": "<html></html>" }, /no Markdown report/],
       ["incomplete html", { "a.md": report("Audit", "One."), "a.html": "<html><body>" }, /ending in <\/html>/],
+      ["script", { "a.md": report("Audit", "One."), "a.html": "<html><script>alert(1)</script></html>" }, /contains a <script>/],
+      ["web font", { "a.md": report("Audit", "One."), "a.html": '<html><link rel="stylesheet" href="https://fonts.googleapis.com/css"></html>' }, /stylesheet or font from another site/],
+      ["css import", { "a.md": report("Audit", "One."), "a.html": "<html><style>@import 'x.css';</style></html>" }, /@import/],
+      ["remote image", { "a.md": report("Audit", "One."), "a.html": '<html><img src="//cdn.example.com/a.png"></html>' }, /image or media file from another site/],
+      ["css url", { "a.md": report("Audit", "One."), "a.html": "<html><style>b{background:url(https://x.com/a.png)}</style></html>" }, /CSS resource from another site/],
     ];
     for (const [name, files, message] of cases) {
       await rm(reports, { recursive: true, force: true });
