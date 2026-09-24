@@ -17,6 +17,7 @@
   "dependencies": {
     "fast-xml-parser": "^5.11.1",
     "htmlparser2": "^10.1.0",
+    "remeda": "^2.50.0",
     "robots-parser": "^3.0.1",
     "tldts": "^7.4.14",
     "zod": "^4.1.12"

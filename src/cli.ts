@@ -2,6 +2,7 @@
 import { resolve } from "node:path";
 import { OperationError } from "./errors.js";
 import { AppError } from "./openseo/platform.js";
+import { brandLookup, promptLookup } from "./ai.js";
 import { auditIssues, auditPages, auditStatus, lighthouseIssues, lighthouseResults, deleteAudit, exportAudit, listAudits, resumeAudit, runAuditWorker, startAudit } from "./audit.js";
 import { backlinksDomains, backlinksLinks, backlinksOverview, backlinksPages, domainRatings } from "./backlinks.js";
 import { domainOverview, domainPages, rankedKeywords, serpCompetitors } from "./domain.js";
@@ -116,6 +117,9 @@ BUSINESS is one of --name TEXT, --cid ID or --place-id ID; TARGET is any of --ci
   agenticseo rank schedule [--project DIR]
   agenticseo rank locations "PLACE" [--location COUNTRY] [--project DIR]
 TRACKER_SETTINGS: --devices mobile|desktop|both --depth 10-100 (multiple of 10) --schedule manual|daily|weekly|monthly
+  agenticseo ai brand BRAND_OR_DOMAIN [--competitors A,B,...] [--scope SCOPE] [MARKET] [--project DIR]
+  agenticseo ai prompt "PROMPT" [--models chat_gpt,claude,gemini,perplexity] [--brand NAME]
+      [--no-web-search] [--web-country US] [--project DIR]
   agenticseo query "SELECT ..." [--project DIR]
 MARKET overrides the project's market for one call: --location US|2840 [--language en]
 FILTERS: --search TEXT --include TERM,... --exclude TERM,... --tags TAG,... --min-volume N --max-volume N
@@ -827,6 +831,59 @@ async function run([command, ...args]: string[]): Promise<unknown> {
       const project = await readProject(root);
       const country = countryForCall(project, option(args, "--location"));
       return searchLocations(root, singlePhrase(args, "place name"), country);
+    }
+    throw new OperationError("input", usage);
+  }
+
+  if (command === "ai") {
+    const [action, ...rest] = args;
+    args = rest;
+    const { root, project, market } = await paidCallScope();
+    const cache = await cacheDirectory(root);
+    if (action === "brand") {
+      const input = { competitors: listOption(args, "--competitors"), scope: option(args, "--scope") };
+      const query = singlePhrase(args, "brand name or domain");
+      const result = await brandLookup(market, { ...input, query, cacheDirectory: cache });
+      const evidence = await saveEvidence(root, new Date().toISOString(), { provider: "DataForSEO", view: "ai brand", project, market, ...result });
+      const { calls: _calls, topQueries, topPages, ...summary } = result;
+      // Cited-source URLs and titles and every prompt behind a page stay in the evidence.
+      return {
+        provider: "DataForSEO",
+        market,
+        ...summary,
+        topQueries: topQueries.map(({ citedSources, firstSeenAt: _first, ...query }) => ({ ...query, citedDomains: [...new Set(citedSources.map((source) => source.domain))] })),
+        topPages: topPages.map(({ keywords, ...page }) => ({ ...page, keywordCount: keywords.length, exampleQuestions: keywords.slice(0, 3).map((keyword) => keyword.question) })),
+        evidence,
+      };
+    }
+    if (action === "prompt") {
+      const input = {
+        models: listOption(args, "--models") ?? ["chat_gpt", "claude", "gemini", "perplexity"],
+        highlightBrand: option(args, "--brand"),
+        webSearch: !flag(args, "--no-web-search"),
+        webSearchCountryCode: option(args, "--web-country")?.toUpperCase(),
+      };
+      const prompt = singlePhrase(args, "prompt");
+      const result = await promptLookup({ ...input, prompt, cacheDirectory: cache });
+      const evidence = await saveEvidence(root, new Date().toISOString(), { provider: "DataForSEO", view: "ai prompt", project, ...result });
+      const { calls: _calls, results, ...summary } = result;
+      // Full answers and citation titles stay in the evidence.
+      const answerPreview = 1500;
+      return {
+        provider: "DataForSEO",
+        ...summary,
+        results: results.map((answer) =>
+          answer.status === "success"
+            ? {
+                ...answer,
+                text: answer.text.slice(0, answerPreview),
+                textLength: answer.text.length,
+                citations: answer.citations.map(({ title: _title, ...citation }) => citation),
+              }
+            : answer,
+        ),
+        evidence,
+      };
     }
     throw new OperationError("input", usage);
   }

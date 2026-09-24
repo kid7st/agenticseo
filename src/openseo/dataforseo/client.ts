@@ -34,6 +34,13 @@ import {
   fetchRelevantPages,
   fetchSerpCompetitors,
 } from "./labs.js";
+import {
+  fetchLlmAggregatedMetrics,
+  fetchLlmCrossAggregatedMetrics,
+  fetchLlmMentionsSearch,
+  fetchLlmResponse,
+  fetchLlmTopPages,
+} from "./ai.js";
 import { fetchLighthouseResult } from "./lighthouse.js";
 import { fetchLiveSerp, fetchLocalSerp, fetchRankCheckSerp, postRankCheckTasks } from "./serp.js";
 
@@ -100,6 +107,13 @@ export function createDataforseoClient(ledger: ProviderCall[]) {
       rankCheck: meter(ledger, fetchRankCheckSerp),
       // task_post is where DataForSEO charges; task_get collection is free and unmetered.
       rankCheckTaskPost: meter(ledger, postRankCheckTasks),
+    },
+    aiSearch: {
+      mentionsSearch: meter(ledger, fetchLlmMentionsSearch),
+      aggregatedMetrics: meter(ledger, fetchLlmAggregatedMetrics),
+      topPages: meter(ledger, fetchLlmTopPages),
+      crossAggregatedMetrics: meter(ledger, fetchLlmCrossAggregatedMetrics),
+      llmResponse: meter(ledger, fetchLlmResponse),
     },
     lighthouse: {
       live: meter(ledger, fetchLighthouseResult),

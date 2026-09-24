@@ -1,5 +1,5 @@
 // Ported from OpenSEO src/shared/researchScope.ts at commit
-// 0ffff93101043aad7600a3b6a499a0cd2887ef49 (parsing subset only; URL.parse replaces
+// 0ffff93101043aad7600a3b6a499a0cd2887ef49 (parsing subset and URL matching; URL.parse replaces
 // try/new URL).
 // Copyright (c) 2026 Ben Senescu. MIT License; see LICENSES/OpenSEO.txt.
 import { parse as parseTld } from "tldts";
@@ -131,4 +131,42 @@ export function parseResearchTarget(
       display: usesPath ? `${hostname}${path}` : hostname,
     },
   };
+}
+
+function hostMatches(candidateHost: string, target: ResearchTarget): boolean {
+  const host = candidateHost.toLowerCase().replace(/^www\./, "");
+  if (target.scope === "subdomains") {
+    return host === target.hostname || host.endsWith(`.${target.hostname}`);
+  }
+  return host === target.hostname;
+}
+
+/**
+ * Whether a result URL belongs to the research target. Used to post-filter
+ * provider rows that cannot be scoped provider-side. Subfolder matching
+ * includes the path and its children but excludes similarly named siblings
+ * (`/blog` matches `/blog/post`, not `/blogging`).
+ */
+export function urlMatchesResearchTarget(
+  url: string,
+  target: ResearchTarget,
+): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+
+  if (!hostMatches(parsed.hostname, target)) return false;
+
+  const path = normalizePath(parsed.pathname);
+  switch (target.scope) {
+    case "exact_url":
+      return path === target.path;
+    case "subfolder":
+      return path === target.path || path.startsWith(`${target.path}/`);
+    default:
+      return true;
+  }
 }

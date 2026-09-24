@@ -13,6 +13,7 @@ export type ErrorCode =
   | "BACKLINKS_BILLING_ISSUE"
   | "AHREFS_AUTH_FAILED"
   | "CRAWL_TARGET_BLOCKED"
+  | "AI_SEARCH_BILLING_ISSUE"
   | "INTERNAL_ERROR";
 
 // INTERNAL_ERROR from provider code means DataForSEO returned something we
@@ -28,6 +29,8 @@ const kinds: Record<ErrorCode, OperationError["kind"]> = {
   AHREFS_AUTH_FAILED: "credentials",
   // An audit start URL the safety policy refuses: the user picks another target.
   CRAWL_TARGET_BLOCKED: "input",
+  // The DataForSEO account cannot pay for AI Optimization calls (balance or plan).
+  AI_SEARCH_BILLING_ISSUE: "provider",
   INTERNAL_ERROR: "provider",
 };
 
