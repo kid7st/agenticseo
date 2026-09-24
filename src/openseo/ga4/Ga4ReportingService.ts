@@ -186,9 +186,11 @@ export function mapGa4ReportError(error: unknown): never {
         error instanceof Ga4DataApiError ? error.retryAfterSeconds : null,
       );
     }
+    // Local change: say whether Google answered or could not be reached, so a proxy
+    // problem and a Google outage read differently.
     throw new Ga4ReportError(
       "ga4_upstream_unavailable",
-      "Google Analytics reporting is temporarily unavailable.",
+      `Google Analytics reporting is temporarily unavailable (${error.status === 0 ? "could not reach Google" : `HTTP ${error.status}`}).`,
     );
   }
   if (error instanceof z.ZodError) {

@@ -104,7 +104,9 @@ describe("Google Analytics", () => {
         await withFetch(google(), () => assert.rejects(useAnalyticsProperty(root, { propertyId: "999" }), failsWith("input", /isn't available/)));
         await assert.rejects(analyticsReport(root, "landing-pages", {}), failsWith("input", /not connected for this project\. Run agenticseo ga4 properties/));
         const adminDown = (url: string, init: RequestInit) => (url.startsWith(`${ADMIN}/v1beta/accountSummaries`) ? new Response("unavailable", { status: 503 }) : google()(url, init));
-        await withFetch(adminDown, () => assert.rejects(useAnalyticsProperty(root, { propertyId: "123" }), failsWith("provider", /temporarily unavailable/)));
+        await withFetch(adminDown, () => assert.rejects(useAnalyticsProperty(root, { propertyId: "123" }), failsWith("provider", /temporarily unavailable \(HTTP 503\)/)));
+        const offline = (url: string, init: RequestInit) => (url.startsWith(`${ADMIN}/v1beta/accountSummaries`) ? Promise.reject(new TypeError("fetch failed")) : google()(url, init));
+        await withFetch(offline, () => assert.rejects(useAnalyticsProperty(root, { propertyId: "123" }), failsWith("provider", /temporarily unavailable \(could not reach Google\)/)));
         await withFetch(google(), () => useAnalyticsProperty(root, { propertyId: "123" }));
         assert.deepEqual((await readProject(root)).analytics, {
           propertyId: "properties/123",

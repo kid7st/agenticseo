@@ -34,16 +34,17 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-      - run: npm ci && npm run build
-      - name: Install tarball and run the CLI
+      - run: npm ci
+      # The documented install: the packed release tarball, installed globally.
+      - name: Install the packed CLI globally and run it
         run: |
           tarball=$(npm pack --silent --pack-destination "$RUNNER_TEMP")
-          mkdir "$RUNNER_TEMP/consumer"
-          cd "$RUNNER_TEMP/consumer"
-          npm init -y >/dev/null
-          npm install "$RUNNER_TEMP/$tarball" --ignore-scripts --no-audit --no-fund
-          ./node_modules/.bin/agenticseo init --domain example.com --location 2840 --language en
-          test -f .agenticseo/project.json
+          npm install -g --prefix "$RUNNER_TEMP/global" "$RUNNER_TEMP/$tarball" --no-audit --no-fund
+          export PATH="$RUNNER_TEMP/global/bin:$PATH"
+          test -f "$RUNNER_TEMP/global/lib/node_modules/agenticseo/.agents/skills/seo-audit/SKILL.md"
+          mkdir "$RUNNER_TEMP/site" && cd "$RUNNER_TEMP/site"
+          agenticseo init --domain example.com --location US
+          agenticseo context > /dev/null
 
   core-checks:
     name: Core checks
