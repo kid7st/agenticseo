@@ -40,7 +40,7 @@ When the user wants to go deeper, hand off to a skill instead of doing the full 
 
 ## Project context
 
-1. Run `agenticseo context` first and ground the coaching in it: the business, goal, positioning, competitors and key pages tell you what the user actually needs next. If there is no project, the next step is `seo-project-setup`.
+1. Run `agenticseo context` and `agenticseo overview` first and ground the coaching in them: the business, goal, positioning, competitors and key pages tell you what the user actually needs next, and the overview (free) shows rank movement, the latest audit's worst issues, the backlink snapshot and Search Console and GA4 against the previous period. Do not add `--refresh-backlinks` unless the user wants fresh backlink numbers; it is a paid call. If there is no project, the next step is `seo-project-setup`.
 2. This skill requires no section. Read whatever is there, and let `missingSections` shape the recommendation: an empty context usually means the next step is `seo-project-setup`. Never front-load the full interview.
 3. Before paying for anything, check `researchLog`. If the same research ran within the last 30 days, reuse it and say so instead of buying it again.
 4. On finish, write back what is durable: anything the user tells you about the business, goal or positioning, in `.agenticseo/context.json`. Append a `researchLog` entry when a session spends money: `{ "entryDate": "<today from agenticseo context>", "summary": "<what>: <inputs>. Verdict: <conclusion>" }`.
@@ -102,6 +102,7 @@ Explain the difference between data sources:
 - Google Search Console (when connected with `agenticseo google connect` and `agenticseo gsc use`) is the user's own first-party data: real clicks, impressions, CTR and position. Read it live with `agenticseo gsc report` or `agenticseo gsc performance` instead of asking for CSV exports. It is free and the best starting point for "what already ranks" and near-ranking opportunities. Google Analytics (`agenticseo ga4 ...`) shows what visitors do after the click.
 - Web search can find current market context, recent pages, reviews, docs, social profiles and contact paths.
 - Browser or page scraping can extract page copy, headings, author names, contact links, schema and content structure.
+- `agenticseo overview` is the project dashboard: one free read of rank trackers, the latest audit, the backlink snapshot, Search Console and GA4.
 - The project context (`agenticseo context` and `.agenticseo/context.json`) is the project's shared memory: business, goal, positioning, writing preferences, competitors, key pages and a research log. Every skill reads it, and the user can edit the file directly.
 - Local files are for file work: Search Console CSVs, crawls and drafts.
 - Reports are where finished work lives: each workflow saves its deliverable in `.agenticseo/reports/` as Markdown plus an HTML page anyone on the team can open and print. Before starting a workflow, run `agenticseo reports` to see what already exists, and point the user at it instead of re-running research they already paid for.

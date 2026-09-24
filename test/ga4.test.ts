@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { OperationError } from "../src/errors.js";
 import { analyticsHealth, analyticsOverview, analyticsProperties, analyticsReport, disconnectAnalytics, searchOpportunities, useAnalyticsProperty } from "../src/ga4.js";
+import { projectOverview } from "../src/overview.js";
 import { readProject, writeProject } from "../src/project.js";
 import { withFetch, withProject } from "./helpers.js";
 
@@ -185,6 +186,25 @@ describe("Google Analytics", () => {
       assert.ok(result.rows.length > 0);
       assert.match(JSON.stringify(result.rows[0]), /kua\.ai\/a/);
       assert.ok(await readFile(join(root, ".agenticseo", "project.json"), "utf8"));
+    });
+  });
+
+  it("puts the Search Console and GA4 cards in the project overview, and fails it when Google refuses", async () => {
+    await connectedProject(async (root) => {
+      await writeProject(root, { ...(await readProject(root)), searchConsole: { siteUrl: "sc-domain:kua.ai", accountId: "sub-1", accountEmail: "owner@kua.ai" } });
+      const { result } = await withFetch(google(), () => projectOverview(root, { refreshBacklinks: false }));
+      assert.equal(result.searchConsole.connected, true);
+      assert.ok("totals" in result.searchConsole && result.searchConsole.totals.clicks === 5 && result.searchConsole.prevTotals.clicks === 5);
+      assert.ok("trend" in result.analytics);
+      assert.equal(result.analytics.totals.sessions, 10);
+      // GA4 returns one day of sessions; the other 27 days of the range read as zero.
+      assert.equal(result.analytics.trend.length, 28);
+      assert.equal(result.analytics.trend[0].date, result.analytics.range.startDate);
+      assert.ok(result.analytics.trend.filter((day) => day.sessions > 0).length <= 1);
+      await assert.rejects(
+        withFetch(google(dataApi({ status: 401 })), () => projectOverview(root, { refreshBacklinks: false })),
+        failsWith("credentials", /Run agenticseo google connect --for analytics/),
+      );
     });
   });
 });
