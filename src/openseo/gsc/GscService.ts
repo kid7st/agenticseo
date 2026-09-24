@@ -12,7 +12,7 @@ import { listGoogleAccounts } from "../../google.js";
 import { OperationError } from "../../errors.js";
 import { AppError } from "../platform.js";
 import { createGscClient, type GscSearchAnalyticsRequest, type GscSearchAnalyticsRow, type GscSite, type UrlInspectionResult } from "./gscClient.js";
-import { GscApiError, GscNotConnectedError, GscTokenError } from "./gscErrors.js";
+import { GscNotConnectedError, GscTokenError } from "./gscErrors.js";
 import { buildSearchAnalyticsRequest, type GscPerformanceInput } from "./searchAnalytics.js";
 
 const SITE_UNVERIFIED_PERMISSION = "siteUnverifiedUser";
@@ -23,9 +23,9 @@ export type GscConnection = { siteUrl: string; accountId: string; accountEmail: 
  *  minted (refresh token revoked or expired), or Google rejected the call
  *  (401/403). These call for reconnecting rather than a retry. */
 export function isExpectedGrantFailure(error: unknown): boolean {
-  if (error instanceof GscTokenError) return true;
-  if (error instanceof OperationError && error.kind === "credentials") return true;
-  return error instanceof GscApiError && (error.status === 401 || error.status === 403);
+  // GscApiError carries its kind: 401/403 are credentials, except an API not
+  // enabled in the Cloud project, which reconnecting would not fix.
+  return error instanceof GscTokenError || (error instanceof OperationError && error.kind === "credentials");
 }
 
 const searchConsoleAccounts = async () => (await listGoogleAccounts()).filter((account) => account.products.includes("searchConsole"));

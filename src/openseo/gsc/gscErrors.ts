@@ -18,8 +18,9 @@ export class GscApiError extends OperationError {
     public readonly status: number,
     message: string,
     public readonly body?: string,
+    kind: OperationError["kind"] = kindForStatus(status),
   ) {
-    super(kindForStatus(status), message);
+    super(kind, message);
     this.name = "GscApiError";
   }
 }

@@ -235,6 +235,22 @@ describe("Search Console", () => {
     });
   });
 
+  it("passes on Google's instructions when the Search Console API is not enabled, without asking to reconnect", async () => {
+    await withGoogleHome(async () => {
+      await connected();
+      const disabled = JSON.stringify({
+        error: {
+          code: 403,
+          message: "Google Search Console API has not been used in project 1 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/searchconsole.googleapis.com/overview?project=1 then retry.",
+          errors: [{ reason: "accessNotConfigured" }],
+        },
+      });
+      const { result } = await withFetch(() => new Response(disabled, { status: 403 }), () => searchConsoleSites());
+      assert.equal(result.accounts[0].requiresReconnect, false);
+      assert.match(result.accounts[0].error ?? "", /has not been used in project 1 .* Enable it by visiting/);
+    });
+  });
+
   it("inspects URLs with per-URL errors, but stops when access is denied", async () => {
     await withGoogleHome(async () => {
       await withProject(async (root) => {

@@ -2,14 +2,17 @@
 // 0ffff93101043aad7600a3b6a499a0cd2887ef49.
 // Copyright (c) 2026 Ben Senescu. MIT License; see LICENSES/OpenSEO.txt.
 // Local change: access tokens come from the locally stored Google grant
-// (src/google.ts) instead of Better Auth; `userId` is unused.
+// (src/google.ts) instead of Better Auth; `userId` is unused; an Admin API not
+// or Data API not enabled in the Cloud project reports Google's message, which
+// names the API and the link that enables it.
 /* eslint-disable max-lines -- one client module per Google integration (gscClient precedent); GA4 spans the Admin and Data APIs */
 import { z } from "zod";
-import { googleAccessToken } from "../../google.js";
+import { disabledApiMessage, googleAccessToken } from "../../google.js";
 import {
   Ga4AdminApiError,
   Ga4DataApiError,
   Ga4MalformedResponseError,
+  Ga4ReportError,
 } from "./ga4Errors.js";
 
 const GA4_ADMIN_API_BASE = "https://analyticsadmin.googleapis.com/v1beta";
@@ -177,6 +180,10 @@ export function createGa4AdminClient(opts: {
       );
     }
     if (!response.ok) {
+      // A disabled API is a Cloud project setting, not lost access: pass on
+      // Google's own instructions, as the Data API path does for SERVICE_DISABLED.
+      const disabled = disabledApiMessage(await response.text().catch(() => ""));
+      if (disabled) throw new Ga4ReportError("ga4_upstream_unavailable", disabled);
       throw new Ga4AdminApiError(
         response.status,
         adminMessageForStatus(response.status),
@@ -432,6 +439,8 @@ export function createGa4DataClient(opts: {
           .text()
           .then((responseBody) => responseBody.slice(0, MAX_ERROR_BODY_LENGTH))
           .catch(() => "");
+        const disabled = disabledApiMessage(body);
+        if (disabled) throw new Ga4ReportError("ga4_upstream_unavailable", disabled);
         let upstreamReason: string | null = null;
         try {
           const parsed = googleErrorSchema.safeParse(JSON.parse(body));

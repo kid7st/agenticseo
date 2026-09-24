@@ -9,6 +9,11 @@ import { readProject, writeProject } from "../src/project.js";
 import { withFetch, withProject } from "./helpers.js";
 
 const ADMIN = "https://analyticsadmin.googleapis.com";
+const disabled_data = () =>
+  new Response(
+    JSON.stringify({ error: { code: 403, message: "Google Analytics analyticsdata.googleapis.com API has not been used in project 1 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/analyticsdata.googleapis.com/overview?project=1", status: "PERMISSION_DENIED", details: [{ reason: "SERVICE_DISABLED", metadata: { service: "analyticsdata.googleapis.com" } }] } }),
+    { status: 403 },
+  );
 const DATA = "https://analyticsdata.googleapis.com/v1beta/properties/123:runReport";
 const GSC_QUERY = "https://www.googleapis.com/webmasters/v3/sites/sc-domain%3Akua.ai/searchAnalytics/query";
 const failsWith = (kind: OperationError["kind"], message: RegExp) => (error: unknown) => error instanceof OperationError && error.kind === kind && message.test(error.message);
@@ -139,6 +144,24 @@ describe("Google Analytics", () => {
       );
       await assert.rejects(run({ status: 403 }), failsWith("credentials", /can no longer access this property/));
       await assert.rejects(run({ status: 429, headers: { "retry-after": "120" } }), failsWith("provider", /quota is exhausted.* Retry after 120 s\./));
+    });
+  });
+
+  it("passes on Google's instructions when an Analytics API is not enabled", async () => {
+    await withAnalyticsGrant(async () => {
+      const disabled = (service: string) =>
+        new Response(
+          JSON.stringify({ error: { code: 403, message: `Google Analytics ${service} API has not been used in project 1 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/${service}/overview?project=1`, status: "PERMISSION_DENIED", details: [{ reason: "SERVICE_DISABLED" }] } }),
+          { status: 403 },
+        );
+      const { result } = await withFetch(() => disabled("analyticsadmin.googleapis.com"), () => analyticsProperties());
+      assert.equal(result.accounts[0].requiresReconnect, false);
+      assert.match(result.accounts[0].error ?? "", /analyticsadmin\.googleapis\.com API has not been used .*Enable it by visiting/);
+    });
+    await connectedProject(async (root) => {
+      await withFetch(google(() => disabled_data()), () =>
+        assert.rejects(analyticsReport(root, "landing-pages", {}), failsWith("provider", /analyticsdata\.googleapis\.com API has not been used .*Enable it by visiting/)),
+      );
     });
   });
 
