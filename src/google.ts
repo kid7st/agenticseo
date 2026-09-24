@@ -240,6 +240,32 @@ export async function connectGoogle(input: { products: GoogleProduct[]; openUrl:
   };
 }
 
+/**
+ * Google's message when an API is not enabled in the OAuth client's Cloud project
+ * (SERVICE_DISABLED or accessNotConfigured). It names the API and the link that
+ * enables it, which a generic "access denied" would hide. Null for any other error.
+ */
+export function disabledApiMessage(body: string): string | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  const error = z
+    .object({
+      error: z.object({
+        message: z.string(),
+        errors: z.array(z.object({ reason: z.string().optional() })).optional(),
+        details: z.array(z.object({ reason: z.string().optional() })).optional(),
+      }),
+    })
+    .safeParse(parsed);
+  if (!error.success) return null;
+  const reasons = [...(error.data.error.errors ?? []), ...(error.data.error.details ?? [])].map((entry) => entry.reason);
+  return reasons.includes("SERVICE_DISABLED") || reasons.includes("accessNotConfigured") ? error.data.error.message : null;
+}
+
 /** Connected accounts and what each may read; tokens are never printed. */
 export async function listGoogleAccounts() {
   return (await readStore()).map((account) => ({

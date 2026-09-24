@@ -2,8 +2,9 @@
 // 0ffff93101043aad7600a3b6a499a0cd2887ef49.
 // Copyright (c) 2026 Ben Senescu. MIT License; see LICENSES/OpenSEO.txt.
 // Local changes: access tokens come from the locally stored Google grant
-// (src/google.ts) instead of Better Auth; a network failure is a GscApiError.
-import { googleAccessToken } from "../../google.js";
+// (src/google.ts) instead of Better Auth; a network failure is a GscApiError; an
+// API not enabled in the Cloud project reports Google's message and exits 4.
+import { disabledApiMessage, googleAccessToken } from "../../google.js";
 import { GscApiError } from "./gscErrors.js";
 
 export { GscApiError, GscTokenError } from "./gscErrors.js";
@@ -109,6 +110,10 @@ export function createGscClient(opts: { accountId: string }) {
     }
     if (!response.ok) {
       const body = await response.text().catch(() => "");
+      // A disabled API is a Cloud project setting, not a lost grant: pass on
+      // Google's own instructions instead of the generic access message.
+      const disabled = disabledApiMessage(body);
+      if (disabled) throw new GscApiError(response.status, disabled, body, "provider");
       throw new GscApiError(
         response.status,
         messageForStatus(response.status, body),
