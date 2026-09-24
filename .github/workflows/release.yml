@@ -1,0 +1,30 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - name: Require the tag to match package.json
+        run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
+      # agenticseo.tgz keeps one name across releases, so releases/latest/download/agenticseo.tgz installs the newest.
+      - name: Pack and publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tarball=$(npm pack --silent)
+          cp "$tarball" agenticseo.tgz
+          gh release create "$GITHUB_REF_NAME" "$tarball" agenticseo.tgz --title "$GITHUB_REF_NAME" --generate-notes

@@ -1,22 +1,38 @@
 # AgenticSEO
 
-Open-source, local-first SEO for agents. AgenticSEO aims to bring OpenSEO's SEO capabilities to a portable core, local commands, and agent skills, without requiring an OpenSEO account, MCP server, browser UI, or always-on application server. Pi is the first development client, not the only intended user.
+Open-source, local-first SEO for agents. AgenticSEO brings OpenSEO's SEO capabilities to local commands and agent skills, without requiring an OpenSEO account, MCP server, browser UI, or always-on application server.
 
-**Status:** early prototype. Project setup, project context, local reports, keyword metrics, keyword research, live SERPs, domain research, saved keywords, backlinks, local SEO lookups, site audits, rank tracking and AI visibility are implemented; the full [OpenSEO capability inventory](docs/PRODUCT.md) remains the goal.
+**Status:** 0.1. Every row of the [OpenSEO capability inventory](docs/PRODUCT.md), taken at a pinned upstream commit, has a local command and was verified live against real providers: keyword research, SERPs, domain research, saved keywords, backlinks, local SEO, AI visibility, site audits with Lighthouse, rank tracking, Search Console, Google Analytics, reports and the dashboard. OpenSEO's ten workflow skills are adapted as agent skills. Deliberate differences are listed per row. Pi is the only agent client tested so far; the skills are plain Markdown and the commands a plain CLI, so other shell-capable agents should work, but that is unverified.
 
 - [Product and capability inventory](docs/PRODUCT.md)
 - [Technical design](docs/DESIGN.md)
 - [Execution plan and acceptance criteria](docs/PLAN.md)
 - [Contributing](CONTRIBUTING.md) · [Security reporting](SECURITY.md)
 
-## Try the first local workflow
+## Install
 
-Requires Node.js 24+, a DataForSEO account, and a base64-encoded DataForSEO `login:password` in `DATAFORSEO_API_KEY`. DataForSEO charges for live lookups. No OpenSEO server or account is needed.
+Requires Node.js 24.14 or newer. Install the latest release from GitHub:
 
 ```sh
-npm install
-npm run build
-npm link
+npm install -g https://github.com/kid7st/agenticseo/releases/latest/download/agenticseo.tgz
+```
+
+Run the same command to update. A specific version is `.../releases/download/v0.1.0/agenticseo.tgz`. To work on AgenticSEO itself, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+The ten workflow skills ship inside the package, in `.agents/skills/`. Link them where your agent looks for skills: `~/.agents/skills` for Pi and other [Agent Skills](https://agentskills.io) clients, or `~/.claude/skills` for Claude Code.
+
+```sh
+mkdir -p ~/.agents/skills
+ln -s "$(npm root -g)"/agenticseo/.agents/skills/* ~/.agents/skills/
+```
+
+Start with `seo-project-setup` in your website's directory, or `seo-coach` if you are not sure where to begin.
+
+## Try the first local workflow
+
+Research commands need a DataForSEO account and a base64-encoded DataForSEO `login:password` in `DATAFORSEO_API_KEY`. DataForSEO charges for live lookups. No OpenSEO server or account is needed.
+
+```sh
 cd /path/to/your-website
 agenticseo init --domain example.com --location US
 agenticseo context

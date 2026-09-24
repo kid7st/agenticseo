@@ -1,6 +1,6 @@
 # Security policy
 
-AgenticSEO has not published a stable or production-ready release. Security fixes land on the current `main` branch; no older versions are supported yet.
+Security fixes land on `main` and ship in the next GitHub release. Only the latest release is supported.
 
 ## Report privately
 
@@ -10,4 +10,4 @@ This includes credential leakage, unsafe handling of project-local data, and une
 
 ## Protect local data
 
-Keep `DATAFORSEO_API_KEY` and any future Google credentials outside project files and Git. Local `.agenticseo/evidence/` contains paid query results; the CLI creates a nested `.gitignore` for that directory. Review files before publishing an SEO project or filing an issue.
+Keep `DATAFORSEO_API_KEY`, `AHREFS_API_KEY` and your Google OAuth client secret outside project files and Git. Google grants are stored in `~/.config/agenticseo/google-accounts.json` (or under `XDG_CONFIG_HOME`), readable only by you; `agenticseo google disconnect` revokes a grant at Google and removes it. Local `.agenticseo/evidence/` contains paid query results; the CLI creates a nested `.gitignore` for that directory. Review files before publishing an SEO project or filing an issue.
