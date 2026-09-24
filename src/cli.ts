@@ -13,8 +13,10 @@ import {
   createTracker,
   estimateTracker,
   listTrackers,
+  rankDue,
   refreshTrackerMetrics,
   removeTrackerKeywords,
+  scheduleLine,
   runTracker,
   searchLocations,
   showTracker,
@@ -110,6 +112,8 @@ BUSINESS is one of --name TEXT, --cid ID or --place-id ID; TARGET is any of --ci
   agenticseo rank trend ID [--device mobile|desktop] [--days 1-730] [--project DIR]
   agenticseo rank matrix ID [--device mobile|desktop] [--runs 1-26] [--project DIR]
   agenticseo rank metrics ID [--project DIR]
+  agenticseo rank due [--project DIR]
+  agenticseo rank schedule [--project DIR]
   agenticseo rank locations "PLACE" [--location COUNTRY] [--project DIR]
 TRACKER_SETTINGS: --devices mobile|desktop|both --depth 10-100 (multiple of 10) --schedule manual|daily|weekly|monthly
   agenticseo query "SELECT ..." [--project DIR]
@@ -794,6 +798,10 @@ async function run([command, ...args]: string[]): Promise<unknown> {
       const input = { device: enumOption(args, "--device", ["mobile", "desktop"] as const), runLimit: intOption(args, "--runs", 1, 26) ?? 12 };
       rejectUnknown(args);
       return trackerMatrix(root, id, input);
+    }
+    if (action === "due" || action === "schedule") {
+      rejectUnknown(args);
+      return action === "due" ? rankDue(root) : scheduleLine(root);
     }
     if (action === "metrics") {
       const id = trackerId();

@@ -35,6 +35,7 @@ Every result states `source`, date, market and `costUsd`, and points to an `evid
 
 - `agenticseo saved list [--tags TAG,...]`: keywords the project already saved, with their latest metrics and tags. Check it first to avoid redoing work, and use existing tags as context.
 - `agenticseo saved add KEYWORD... --tags TAG,...`: save chosen keywords only after the user explicitly confirms. Suggest short tags such as `topic:<topic>`, `intent:<intent>` or `page:<slug>`, and confirm new tag names. Researched keywords keep their metrics; `agenticseo saved refresh` re-fetches all saved keywords and is billed, so ask first.
+- `agenticseo rank create`, then `agenticseo rank add TRACKER_ID KEYWORD...`: track the chosen keywords' Google positions for the project domain, when the user wants to follow them over time. Run `agenticseo rank estimate TRACKER_ID` and show the cost before `agenticseo rank run` or before setting `--schedule daily|weekly|monthly`. A schedule only runs once the user adds the line from `agenticseo rank schedule` to their system scheduler. Read results with `agenticseo rank show TRACKER_ID`.
 - `agenticseo query "SELECT ..."`: read-only SQL over saved keywords and stored metrics when a question needs a join or aggregate, for example the highest-volume saved keywords per tag. Select only the columns and rows you need.
 
 Not available yet in AgenticSEO: Search Console data. Say so when the task needs it; do not approximate it.
