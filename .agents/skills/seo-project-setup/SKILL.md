@@ -114,7 +114,7 @@ Save the pages that actually matter as `keyPages`: money pages, topic hubs and t
 Search Console is the richest first-party signal: existing impressions, near-ranking terms, cannibalization and pages that already have search demand. Google Analytics adds what visitors do after the click. Both are free to read.
 
 1. Run `agenticseo google accounts`. If an account can already read them, go to step 3.
-2. Connecting needs the user's own Desktop OAuth client (README, "Google Search Console and Analytics"). With `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` set, run `agenticseo google connect` and pass on the address it prints; the user approves in their browser within five minutes. If the command exits 3, its message names what to fix in Google Cloud.
+2. Connecting needs the user's own Desktop OAuth client (setup guide: https://github.com/kid7st/agenticseo/blob/main/docs/google.md). With `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` set, run `agenticseo google connect` and pass on the address it prints; the user approves in their browser within five minutes. If the command exits 3, its message names what to fix in Google Cloud.
 3. Run `agenticseo gsc sites` and `agenticseo ga4 properties`, confirm with the user which property belongs to this site, then `agenticseo gsc use SITE_URL` and `agenticseo ga4 use PROPERTY_ID`.
 4. Confirm it works with `agenticseo gsc report`. Once connected, `keyword-research`, `keyword-clustering` and `seo-audit` read it directly; there are no files to maintain.
 

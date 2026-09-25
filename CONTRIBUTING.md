@@ -1,6 +1,6 @@
 # Contributing
 
-The [product scope](docs/PRODUCT.md) lists every capability with its upstream source and local differences; the [design](docs/DESIGN.md) explains the local-first boundary. Please check existing issues before starting a large change.
+The [design](docs/DESIGN.md) explains how AgenticSEO is built and why; the [OpenSEO parity](docs/openseo-parity.md) page lists every capability with its upstream source and local differences. Please check existing issues before starting a large change.
 
 ## Development
 
@@ -14,7 +14,7 @@ npm link    # optional: put your checkout's `agenticseo` on the PATH
 
 `npm run check` builds the TypeScript CLI and runs fixture-backed tests. Tests must not depend on paid API calls, credentials, or a running OpenSEO service. For manual DataForSEO testing, set `DATAFORSEO_API_KEY` locally and never commit it, its decoded value, or customer research data.
 
-Keep changes focused, add the smallest relevant regression check, and update the README or agent skill when a command's behavior changes. Preserve OpenSEO's copyright and license notices when porting its source. Write code, documentation, and PR descriptions in English.
+Keep changes focused, add the smallest relevant regression check, and update [docs/commands.md](docs/commands.md) or the affected skill when a command's behavior changes. Preserve OpenSEO's copyright and license notices when porting its source. Write code, documentation, and PR descriptions in English.
 
 `scripts/live-check.mjs` runs every command against real providers in a temporary project, reads back each mutation and checks each export. It spends about $1.20 and needs real accounts, so run it by hand before a release; its header lists the settings.
 

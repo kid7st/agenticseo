@@ -90,7 +90,7 @@ function oauthClient() {
   if (!clientId || !clientSecret) {
     throw new OperationError(
       "credentials",
-      "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are required: create a Desktop OAuth client in Google Cloud (see README, Google Search Console and Analytics)",
+      "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are required: create a Desktop OAuth client in Google Cloud (see https://github.com/kid7st/agenticseo/blob/main/docs/google.md)",
     );
   }
   // Google answers a wrong client id only on its consent page ("Error 401: invalid_client");

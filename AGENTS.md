@@ -1,6 +1,8 @@
 # AgenticSEO development guidance
 
-This repository is an early, independent, agent-first adaptation of OpenSEO's SEO capabilities. Read [docs/PRODUCT.md](docs/PRODUCT.md) for the full capability target and [docs/DESIGN.md](docs/DESIGN.md) for the local-first boundary. The existing CLI and keyword skill are only the first vertical slice.
+This repository is an independent, agent-first adaptation of OpenSEO's SEO capabilities: a local CLI plus ten agent skills. Read [docs/DESIGN.md](docs/DESIGN.md) for the architecture and local-first boundary, and [docs/openseo-parity.md](docs/openseo-parity.md) for the capability inventory against upstream.
+
+- Documentation is user-facing first. `README.md` stays short: what it does, install, accounts, getting started. Command details go in [docs/commands.md](docs/commands.md), Google setup in [docs/google.md](docs/google.md), skills in [docs/skills.md](docs/skills.md). Update the matching page when a command's behavior changes, and the parity row when upstream coverage changes.
 
 - Keep SEO operations usable without a required server or MCP connection. Do not import Cloudflare Worker, hosted billing, or Web UI dependencies into the local CLI.
 - Validate external provider data before using it. Missing metrics remain unknown, not zero. Report provider errors and costs when known; do not require product-level approval or budgets.
