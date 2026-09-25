@@ -53,6 +53,6 @@ Each workflow ends by saving a report in `.agenticseo/reports/`:
 - a Markdown file (`<name>.md`) that you and your agent can read and edit;
 - an HTML page (`<name>.html`) with the same content, built from one template, that opens offline and prints cleanly.
 
-Reports open with the conclusion, give the evidence behind each recommendation, and end with how the report was made: which data was used, when, and what it cost. `agenticseo reports` lists them.
+Reports open with the conclusion, give the evidence behind each recommendation, and end with how the report was made: which data was used, when, and what it cost. `agenticseo reports` lists them. See an [example audit report](examples/fastagent-seo-audit.md).
 
 To give reports your own structure, for example a monthly client check-in, save a template in `.agenticseo/templates/<name>.md` describing the audience, sections and tone, and ask for a report "using the <name> template".
