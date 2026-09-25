@@ -23,33 +23,52 @@ AgenticSEO brings the SEO features of [OpenSEO](https://github.com/every-app/ope
 
 ## Quick start
 
-Requires [Node.js](https://nodejs.org) 24.14 or newer.
-
-**1. Install the CLI.** Run the same command again to update.
+You need [Node.js](https://nodejs.org) 24.14 or newer and a [DataForSEO](https://dataforseo.com) account (pay per lookup, no subscription).
 
 ```sh
+# 1. Install the CLI. Run it again to update.
 npm install -g https://github.com/kid7st/agenticseo/releases/latest/download/agenticseo.tgz
-```
 
-**2. Add the skills to your agent.** The [skills](https://github.com/vercel-labs/skills) installer asks which agents to add them to (Pi, Claude Code, Codex, Cursor and many more). Run it again after updating the CLI.
-
-```sh
+# 2. Add the skills to your agent. The installer asks which agents:
+#    Pi, Claude Code, Codex, Cursor and many more. Run it again after updating.
 npx skills add "$(npm root -g)/agenticseo" -g
-```
 
-**3. Add a [DataForSEO](https://dataforseo.com) key** to your shell. It is your DataForSEO `login:password` in base64:
-
-```sh
+# 3. Give it your DataForSEO login and API password (base64-encoded).
+#    Put this line in your shell profile to keep it.
 export DATAFORSEO_API_KEY="$(printf 'you@example.com:your-api-password' | base64)"
 ```
 
-**4. Open your agent in your website's folder and ask:**
+4. Open your agent in your website's folder and ask for what you want, in your own words. The example below shows a real run.
 
-> Set up SEO for this site.
-
-The `seo-project-setup` skill asks about your business, goals and competitors, and connects Google Search Console if you want. Not sure what to do next? Ask for the `seo-coach`.
+For ongoing work, start with "Set up SEO for this site": the `seo-project-setup` skill records your business, goals and competitors so later requests use them, and connects Google Search Console if you want. Not sure what to ask? Ask for the `seo-coach`.
 
 So far AgenticSEO has been tested with Pi. If you use another agent, please [tell us how it went](https://github.com/kid7st/agenticseo/issues).
+
+## Example: auditing fastagent.sh
+
+We audited [fastagent.sh](https://fastagent.sh), a TypeScript agent framework, starting from an empty folder:
+
+```sh
+mkdir fastagent.sh && cd fastagent.sh
+agenticseo init --domain fastagent.sh --location US   # the site and its market
+pi                                                    # or your own agent
+```
+
+> Audit this site and tell me what to fix first. Work without asking me questions.
+
+In about six minutes the agent:
+
+1. crawled 81 pages on this machine (free) and found no technical blocker;
+2. checked live Google results for 11 queries, looked up 31 keywords and the site's backlinks (DataForSEO charged $0.19; the agent's model usage is separate);
+3. saved a report as Markdown and HTML in `.agenticseo/reports/`.
+
+What it found: fastagent.sh ranks #13 (page 2) for its own name, "fastagent" (260 US searches a month), behind three unrelated projects with the same name, and it has only 2 referring domains. What to fix first: say "TypeScript" in the homepage title and description so searchers can tell it apart, earn a few developer links, and connect Search Console to see real clicks.
+
+<p align="center">
+  <a href="docs/examples/fastagent-seo-audit.md"><img src="docs/assets/example-report.png" alt="The first screen of the fastagent.sh audit report" width="720"></a>
+</p>
+
+Read the [full report](docs/examples/fastagent-seo-audit.md), with every query, position and cost behind it.
 
 ## What you can ask
 
