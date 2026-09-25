@@ -4,20 +4,24 @@ AgenticSEO's skills are written instructions that teach your agent a complete SE
 
 ## Install
 
-The skills are included in the AgenticSEO package. Link them into your agent's skills folder:
+The skills are included in the AgenticSEO package, so they always match the installed CLI. Add them with the [skills](https://github.com/vercel-labs/skills) installer, which asks which agents to add them to:
+
+```sh
+npx skills add "$(npm root -g)/agenticseo" -g
+```
+
+`-g` installs them for your user; leave it out to add them to the current project only. `-a pi -a claude-code -y` picks agents without prompting. The installer copies the skills, so run it again after updating the CLI.
+
+Without the installer, link the skills into your agent's skills folder. Links follow CLI updates automatically:
 
 ```sh
 mkdir -p ~/.agents/skills
 ln -s "$(npm root -g)"/agenticseo/.agents/skills/* ~/.agents/skills/
 ```
 
-| Agent | Skills folder |
-| --- | --- |
-| Pi | `~/.agents/skills`, or `.agents/skills` inside a project |
-| Claude Code | `~/.claude/skills` |
-| Other Agent Skills clients | See your agent's documentation; most read `~/.agents/skills` |
+`~/.agents/skills` works for Pi and most Agent Skills clients; Claude Code reads `~/.claude/skills`.
 
-Because they are links, updating AgenticSEO updates the skills too. So far AgenticSEO has only been tested with Pi. Please [report](https://github.com/kid7st/agenticseo/issues) how it works with other agents.
+So far AgenticSEO has only been tested with Pi. Please [report](https://github.com/kid7st/agenticseo/issues) how it works with other agents.
 
 ## Using them
 
