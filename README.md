@@ -1,119 +1,122 @@
 # AgenticSEO
 
-Open-source, local-first SEO for agents. AgenticSEO brings OpenSEO's SEO capabilities to local commands and agent skills, without requiring an OpenSEO account, MCP server, browser UI, or always-on application server.
+SEO research and site audits for your coding agent. AgenticSEO gives an agent such as Pi or Claude Code a command-line toolkit and ten ready-made SEO workflows. Ask your agent to audit your site, find keywords worth targeting, study a competitor or check your Google Maps visibility. It gathers the data, explains what matters, and saves a report in your project.
 
-**Status:** 0.1. Every row of the [OpenSEO capability inventory](docs/PRODUCT.md), taken at a pinned upstream commit, has a local command and was verified live against real providers: keyword research, SERPs, domain research, saved keywords, backlinks, local SEO, AI visibility, site audits with Lighthouse, rank tracking, Search Console, Google Analytics, reports and the dashboard. OpenSEO's ten workflow skills are adapted as agent skills. Deliberate differences are listed per row. Pi is the only agent client tested so far; the skills are plain Markdown and the commands a plain CLI, so other shell-capable agents should work, but that is unverified.
+It runs on your machine. There is no account to create and no server to keep running. You pay the data providers directly, per lookup, and everything the agent finds stays in your website's folder.
 
-- [Product and capability inventory](docs/PRODUCT.md)
-- [Technical design](docs/DESIGN.md)
-- [Execution plan and acceptance criteria](docs/PLAN.md)
-- [Contributing](CONTRIBUTING.md) · [Security reporting](SECURITY.md)
+AgenticSEO is based on [OpenSEO](https://github.com/every-app/open-seo) and brings its SEO features to local commands and agent skills. It is an independent project, not an official OpenSEO release.
+
+## What you can do
+
+| Ask your agent to… | What it uses |
+| --- | --- |
+| Audit my site and tell me what to fix first | A local crawler (free), optional Lighthouse checks, live rankings |
+| Find keywords worth targeting for these topics | Keyword research, search volume, difficulty, intent and live Google results |
+| Group my keywords and map them to pages | Search Console queries, SERP overlap, your key pages |
+| Analyze a competitor, or who wins in my market | Ranked keywords, top pages, backlinks, SERP competitors, AI answer mentions |
+| Check how I show up on Google Maps | Business profiles, reviews, local results and a rank grid around your location |
+| Find sites that might link to my guide | SERPs and competitors' backlinks, plus your agent's web search for contacts |
+| Track my rankings every week | Rank trackers, run on demand or by your system scheduler |
+| Show what already ranks and what visitors do | Your own Google Search Console and Google Analytics data (free) |
+
+Each workflow ends with a report: a Markdown file your agent can read later and an HTML page you can open, share or print.
 
 ## Install
 
-Requires Node.js 24.14 or newer. Install the latest release from GitHub:
+Requires [Node.js](https://nodejs.org) 24.14 or newer.
 
 ```sh
 npm install -g https://github.com/kid7st/agenticseo/releases/latest/download/agenticseo.tgz
 ```
 
-Run the same command to update. A specific version is `.../releases/download/v0.1.0/agenticseo.tgz`. To work on AgenticSEO itself, see [CONTRIBUTING.md](CONTRIBUTING.md).
+Run the same command again to update.
 
-The ten workflow skills ship inside the package, in `.agents/skills/`. Link them where your agent looks for skills: `~/.agents/skills` for Pi and other [Agent Skills](https://agentskills.io) clients, or `~/.claude/skills` for Claude Code.
+Then give your agent the skills. They are included in the package:
 
 ```sh
 mkdir -p ~/.agents/skills
 ln -s "$(npm root -g)"/agenticseo/.agents/skills/* ~/.agents/skills/
 ```
 
-Start with `seo-project-setup` in your website's directory, or `seo-coach` if you are not sure where to begin.
+`~/.agents/skills` works for Pi and other [Agent Skills](https://agentskills.io) clients. For Claude Code, link them into `~/.claude/skills` instead. So far AgenticSEO has only been tested with Pi. See [skills](docs/skills.md) for what each skill does.
 
-## Try the first local workflow
+## Accounts you need
 
-Research commands need a DataForSEO account and a base64-encoded DataForSEO `login:password` in `DATAFORSEO_API_KEY`. DataForSEO charges for live lookups. No OpenSEO server or account is needed.
+| Service | Needed for | Cost |
+| --- | --- | --- |
+| [DataForSEO](https://dataforseo.com) | Keywords, SERPs, competitors, backlinks, local SEO, AI visibility, rank tracking, Lighthouse | Pay per lookup, usually $0.001–$0.08; an AI brand lookup is about $0.60–$0.85 |
+| Google Search Console and Analytics | Your site's own clicks, queries and visitor behavior | Free; needs a one-time [Google setup](docs/google.md) |
+| [Ahrefs](https://ahrefs.com) (optional) | Ahrefs Domain Rating | Free API key |
+
+Site audits run on your machine and cost nothing. To give an idea of scale, one complete workflow, such as clustering a site's keywords or mapping a competitive landscape, cost between $0.05 and $0.65 in our tests. Every paid result reports what it cost.
+
+Set your DataForSEO credentials in your shell. The key is your DataForSEO `login:password` encoded in base64:
 
 ```sh
-cd /path/to/your-website
-agenticseo init --domain example.com --location US
-agenticseo context
-agenticseo overview
-agenticseo research "seo audit"
-agenticseo keywords "seo audit" "seo audit tool"
-agenticseo serp "seo audit"
-agenticseo reports
+export DATAFORSEO_API_KEY="$(printf 'you@example.com:your-api-password' | base64)"
 ```
 
-`--location` takes a two-letter country code or a DataForSEO country location code (`US` is `2840`); `--language` is optional and defaults to the country's main language. The pair is checked against OpenSEO's country table before anything is saved, so an unsupported market fails without a paid call. Commands find the project from the current directory or an ancestor; pass `--project DIR` to use another root.
+Keys live in your environment and never go into project files.
 
-- `init` creates `.agenticseo/project.json` with the bare domain (`www`, scheme and path removed) and the market. The file is checked again on every read.
-- `context` validates and prints `.agenticseo/context.json`, the project's shared memory in OpenSEO's vocabulary: `sections` (`business_overview`, `current_goal`, `positioning`, `writing_preferences`), `customSections`, `competitors`, `keyPages` and a `researchLog` of dated findings, plus report templates. People and agents edit that file directly. A missing file is an empty context; an invalid one fails with the exact field. Competitor domains and page URLs are shown in canonical form, the log shows the newest 20 entries from the last 90 days, and `today` (local date) is given for new entries; a later date is rejected.
-- `reports` indexes `.agenticseo/reports/*.md`. A report's first line is its `# Title` and the text before its first section is its summary. A self-contained `.html` file with the same name is its HTML export: it must end with `</html>`, stay under 500 KB, and load nothing from other sites (no scripts, remote stylesheets, fonts or images), as OpenSEO's report viewer requires. Templates live in `.agenticseo/templates/*.md` in the same shape.
-- `overview [--refresh-backlinks]` is OpenSEO's project dashboard in one result:
-  - rank trackers: keywords improved or declined against a week ago, and how many are in the top 10;
-  - the latest audit's three worst issue types, by severity and then by affected pages;
-  - the project's backlink snapshot, flagged `stale` after a day;
-  - Search Console's last 28 days against the 28 before;
-  - GA4 organic sessions, users, engagement rate and key events against the previous period, with a daily sessions trend.
+## Get started
 
-  Reading costs nothing. `--refresh-backlinks` buys a whole-site DataForSEO backlinks summary (about $0.02) when the snapshot is missing, older than a day or for another domain, and reports its cost and evidence file. A connected Search Console or GA4 that fails fails the command with its usual exit code.
-- `research "SEED"... [--limit 150|300|500] [--mode auto|related|suggestions|ideas] [--clickstream]` runs OpenSEO's keyword research for 1–5 seeds, each on its own: DataForSEO Labs related keywords, falling back to suggestions and then ideas until at least five non-seed keywords are found, or Google Ads keyword ideas where Labs does not cover the market. `--mode` fixes the source, as the app's source picker does. Each seed returns its first rows (25 for one seed, 10 each in a batch); a repeat within 24 hours comes from `.agenticseo/cache/` at no cost (`cached: true`).
-- `keywords TERM... [--clickstream]` returns volume, CPC, competition, keyword difficulty and intent for up to 700 terms, from Labs keyword overview or, outside Labs markets, Google Ads search volume. Terms with no metric at all are listed in `missingKeywords`.
-- `serp "QUERY"... [--depth 10-100]` returns live Google results of every type for 1–10 queries (default depth 20), trimmed to type, rank, title, URL, domain and description. A batch shows each query's first 10 rows without descriptions; the evidence keeps everything.
-- `research` and `serp` batches follow OpenSEO's bulk tools: a seed or query that fails is reported with `ok: false` and its error while the others succeed. A rejected key stops the batch (exit 3), and a batch in which every item failed exits with that failure's code.
-- `domain TARGET [--scope SCOPE]` returns a domain's estimated organic traffic and ranking-keyword count (OpenSEO's `get_domain_overview`, cached 12 hours). The metrics always cover the host and its subdomains; `scope` only labels the request.
-- `ranked TARGET` lists the keywords a domain or page ranks for, with position, volume, traffic, CPC, difficulty and URL (OpenSEO's `get_ranked_keywords`). `--scope` narrows to `domain` (no subdomains), `subfolder` or `exact_url`; a path must be given as an absolute URL. Filters: `--min-volume`, `--max-rank`, `--exclude` (brand terms), `--types`; `--sort`; `--limit` (default 50) and `--offset`, with `totalCount` and `nextOffset` in the result. OpenSEO's keyword suggestions for a domain are `ranked TARGET --sort traffic_estimate --limit 100`.
-- `domain-keywords TARGET` is OpenSEO's domain keywords tab: a domain's ranking keywords with position, volume, traffic, CPC, difficulty and URL, filtered by `--include`/`--exclude` keyword terms, `--search` (keyword or URL), and traffic, volume, CPC, difficulty and rank ranges, sorted by `--sort traffic|volume|rank|score|cpc` (`score` is difficulty), paged with `--page`/`--page-size` and cached 12 hours. DataForSEO accepts at most eight filter conditions per request, and more are refused before any call. `ranked` is the agent tool's version of the same data.
-- `pages TARGET` lists a domain's pages by organic traffic or ranking-keyword count (OpenSEO's domain pages view, cached 12 hours), with `--scope`, `--include`/`--exclude` URL terms, traffic and keyword-count ranges, `--sort`, `--order` and `--page`/`--page-size`.
-- `competitors KEYWORD...` compares the domains ranking across up to 100 keywords' SERPs (OpenSEO's `find_serp_competitors`), sorted by visibility; `--exclude-domains` drops your own site and its subdomains.
+Open your agent in your website's folder and ask:
 
-- `saved add KEYWORD... [--tags TAG,...] [--replace-tags]` saves keywords for the project's market (OpenSEO's `save_keywords`: idempotent, tags appended unless replaced). `saved list` shows them with their latest metrics and tags, using OpenSEO's filters (`--search`, `--include`/`--exclude`, `--tags` matching any tag, volume/CPC/difficulty ranges), `--sort`/`--order` and `--page`. `saved tag`, `saved rename-tag` and `saved delete-tag` (refused while a tag is in use) manage tags by name; `saved remove` deletes by id. `saved export [--format csv|jsonl]` writes OpenSEO's CSV columns or full JSON lines to `.agenticseo/exports/`. `saved refresh` re-fetches metrics for every saved keyword, one paid call per market. Keywords found by `research` keep their metrics automatically.
-- `backlinks overview TARGET` returns OpenSEO's backlinks summary (rank, backlinks, referring domains and pages, broken links, spam scores), twelve monthly trend points and the top referring domains, cached for six hours. `backlinks links`, `backlinks domains` and `backlinks pages` page through backlink rows, referring domains and the target's top pages with OpenSEO's filters and sort fields. Scopes work as for domain research; for a subfolder, totals come from filtered backlink counts and rank, trends and the referring-domain breakdown are unavailable. Spammy referring domains (spam score above 40) are hidden unless you pass `--include-spam`.
-- `domain-rating DOMAIN...` looks up Ahrefs' free public Domain Rating for up to 100 domains, cached for a day. Ahrefs now requires a free APIv3 key for this endpoint: create a free Ahrefs account, generate a key under Account settings → API keys, and set `AHREFS_API_KEY`. Lookups that fail are listed under `failed`, never reported as "no rating". Show "Domain Rating by Ahrefs" wherever you use the numbers.
-- `local` covers OpenSEO's local SEO tools: `local businesses` searches listings near `--near LAT,LNG` within `--radius KM` with rating, review-count and claimed filters; `local serp "QUERY" --near LAT,LNG [--zoom]` fetches a Google Maps or Local Finder SERP; `local categories [TEXT]` lists business category slugs (free, cached a week); `local profile` reads one Google Business Profile; `local questions` returns its Q&A; `local reviews` and `local posts` collect its reviews (sortable, optionally including other sites' reviews with `--other-sources`) and posts; `local grid "QUERY" --center LAT,LNG` searches Maps at every point of a 3×3 or 5×5 grid and reports where the target business ranks, each point's result count and #1 business. Identify a business with `--name`, `--cid` or `--place-id` (cid and place_id come from `local serp` rows). A grid costs one Maps search per point. Reviews and posts are billed when the task is posted and collected for free; if DataForSEO has not finished within about 20 seconds the result is `status: "processing"` with a `taskId`, and running the same command with `--task-id` later collects it at no extra cost.
-- `audit start [URL]` crawls the project's site, or URL, with OpenSEO's audit engine and records every page and issue locally; it costs nothing. The crawl stays on the start URL's origin, follows robots.txt and sitemaps, requests about one page per second, and backs off when the site answers 429. `--max-pages` takes 10 to 10,000 (default 50). Local and private-network addresses such as `localhost:3000` are refused unless you pass `--allow-private`. The audit runs in a background process and the command returns its id at once; `--wait` runs it in the foreground instead. `audit status [ID]` shows the phase, pages crawled, issue counts by severity once completed, and the worker's log file. An audit whose process was killed or stopped heartbeating shows `interrupted`; `audit resume ID` continues it, and a failed one, from where it stopped. Pages already saved are not fetched again. `audit issues [ID]` lists issues critical first with a per-type summary and how to fix each type (`--severity`, `--type`, `--limit`, default 200); `audit pages [ID]` lists crawled pages (`--status`, `--fetch-class`, `--url-contains`, `--limit`, default 100). `audit start --lighthouse` also runs Lighthouse through DataForSEO on mobile and desktop for OpenSEO's sample: the start page plus one page per URL pattern, at most 10 pages. It is billed per check (about $0.005 on 2026-09-24) and needs `DATAFORSEO_API_KEY`. `audit status` shows the checks' progress and cost; `audit lighthouse [ID]` lists each check's scores and Core Web Vitals, and `audit lighthouse --result ID [--category performance|accessibility|best-practices|seo]` shows one check's issues, largest savings first. A resumed audit does not pay again for checks it already stored. `audit export [ID] [--table issues|pages|performance] [--format csv|jsonl]` writes OpenSEO's issue, page or Lighthouse performance export to `.agenticseo/exports/`. `audit export --table lighthouse --result ID [--category CATEGORY | --full]` writes the app's Lighthouse download for one check: its issues, one category's issues, or the full stored payload, as JSON. `audit list` shows every audit; `audit delete ID` removes one with its pages and issues and stops its worker. Commands without an id use the latest audit.
-- `rank` tracks Google positions for a set of keywords (OpenSEO's rank tracker). `rank create [DOMAIN]` makes a tracker for the project domain and market, or another `--location`/`--language`. Add `--location-name` for one city, using the exact name `rank locations "PLACE"` returns; the registry is free and cached for 30 days. The defaults are mobile, depth 40 and manual; change them with `--devices`, `--depth` or `--schedule`. `rank add ID KEYWORD...` and `rank remove ID KEYWORD_ID...` change the keywords; `rank list`, `rank show ID`, `rank update ID` and `rank archive ID` manage trackers. `rank estimate ID [--add N]` prices a manual run and each scheduled check before you spend anything; it uses OpenSEO's price table, and each run records what DataForSEO actually charged. `rank run ID` checks every keyword now on the live endpoint, and the run reports its cost. `rank show ID [--compare 7d]` gives each keyword's latest position, ranking URL and SERP features, with the position at the start of the period. `rank history ID KEYWORD_ID`, `rank trend ID` and `rank matrix ID` give a keyword's position history, the count in the top 3, 4–10, 11–20 and not ranking per run, and positions by date. `rank metrics ID` refreshes search volume, difficulty and CPC (billed). A check whose process died is closed by the next `rank` command; the results it saved stay visible. Trackers with a daily, weekly or monthly `--schedule` are checked by `rank due`, which your system scheduler calls every hour. `rank schedule` prints the crontab line for the project; add it yourself, and make `DATAFORSEO_API_KEY` available to the job. The line pins the current Node binary, so print it again after upgrading Node. Creating or updating a scheduled tracker shows the cost of each check and per month. Scheduled checks go through DataForSEO's cheaper task queue and take 5 to 15 minutes. Any task not finished by then is checked live. Task ids are stored as soon as they are posted, so if a call is interrupted the next `rank due` collects the paid tasks instead of posting them again.
-- `ai brand BRAND_OR_DOMAIN [--competitors A,B]` shows how often AI answers mention a brand or domain (OpenSEO's Brand Lookup). It covers ChatGPT, where DataForSEO has US English data only, and Google AI Overview, and reports AI search volume, the pages AI answers cite, example prompts, and share of voice against up to five competitors. It is DataForSEO's most expensive call: one lookup with competitors cost $0.84 on 2026-09-24. A complete result is cached for a day. `ai prompt "PROMPT" [--models chat_gpt,claude,gemini,perplexity] [--brand NAME]` asks the models one question with web search and shows each answer's start, citations and whether the brand appears (four models cost $0.15). Each answer is cached for a week, and the evidence file keeps the full text.
-- `google connect [--for search-console|analytics|all]` authorizes read-only access to your Google Search Console and Analytics data with your own OAuth client (see below). It prints an address, opens it in your browser, and waits up to five minutes for you to approve. The grant is stored per Google account in `~/.config/agenticseo/google-accounts.json` (owner-only; `$XDG_CONFIG_HOME` is honored), never in a project. `google accounts` lists connected accounts without tokens; `google disconnect EMAIL` revokes the grant at Google and forgets it.
-- `gsc sites` lists the Search Console properties your accounts can read, and `gsc use SITE_URL` records one for this project in `project.json`. Use the exact name, for example `sc-domain:example.com` or `https://www.example.com/`. `gsc disconnect` removes it. `gsc performance` ports OpenSEO's Search Console query:
-  - clicks, impressions, CTR and position grouped by `--dimensions` (query, page, country, device, date, searchAppearance);
-  - `--range` or `--start`/`--end`, and `--filter DIMENSION:OPERATOR:EXPRESSION` (repeatable);
-  - `--min-position`, `--max-position` and `--min-impressions`, applied to the window's top 1,000 rows;
-  - paging with `--start-row` and `nextStartRow`.
+> Set up SEO for this site.
 
-  `gsc report` gives totals against the previous period, striking-distance queries (best page at positions 5–20) and countries. `gsc export` writes the query or page table. `gsc inspect URL...` runs URL Inspection on up to ten URLs. Search Console is free. A revoked or expired grant exits 3 and asks you to run `google connect` again.
-- `ga4 properties` lists the Google Analytics properties your accounts can read, and `ga4 use PROPERTY_ID` records one for this project with its time zone and currency; `ga4 disconnect` removes it. `ga4 report KIND` runs one of OpenSEO's GA4 reports: `landing-pages`, `page-performance`, `key-events`, `traffic-acquisition`, `ecommerce`, `site-search` or `audience`.
-  - Reports cover Organic Search unless `--channel all`. They use the last 28 complete days in the property's time zone unless `--start`/`--end` is given, and page with `--limit`/`--offset`.
-  - `--breakdown`, `--compare` (previous period) and `--include-date` apply where the report supports them.
-  - `ga4 overview` compares organic totals with the previous period and adds a daily or weekly trend. `ga4 health` checks data streams, enhanced measurement, key events and custom definitions. `ga4 opportunities` ranks landing pages by joining Search Console demand with GA4 engagement.
-  - A metric Google restricts is `null`, never 0. Analytics is free.
-- `query "SELECT ..."` runs one read-only SQL statement against the project database and returns up to 500 rows. Tables: `saved_keywords`, `saved_keyword_tags`, `saved_keyword_tag_assignments`, `keyword_metrics` (latest metrics per keyword and market), `audits`, `audit_pages`, `audit_issues` and `audit_lighthouse_results` (`audit_frontier` and `audit_page_links` are crawl state, emptied when an audit completes), `rank_tracking_configs`, `rank_tracking_keywords`, `rank_check_runs`, `rank_snapshots` and `rank_check_tasks`; `SELECT sql FROM sqlite_schema` shows their columns.
+The `seo-project-setup` skill asks about your business, goals and competitors, and connects Google if you want. Not sure where to start? Ask for the `seo-coach` instead.
 
-Domain commands need a market DataForSEO Labs serves. Where OpenSEO would quietly switch such a project to the United States, AgenticSEO exits 2 so you choose the market with `--location`.
+You can also run the commands yourself:
 
-`keywords`, `research` and `serp` take `--location` and `--language` to run one call in another market; as in OpenSEO, changing only the location switches to that country's language. Paid commands report `source` (which DataForSEO API answered), date, the resolved `market` and `costUsd`, and save an evidence file under `.agenticseo/evidence/` with all rows, monthly trends and the raw provider items of each call. Evidence, cache and the project database (`.agenticseo/data/`) are ignored by Git; context, reports and exports are meant to be versioned with the site when you choose. Missing metrics stay `null`, never 0. Google Ads markets have no keyword difficulty or intent. `--clickstream` asks Labs for clickstream-refined volume at twice the cost and is refused for Google Ads markets. If the key is missing, a paid command fails without a lookup. Behind a proxy, set `HTTPS_PROXY` (and `NO_PROXY` for exceptions) as for curl; every request, including Google and the audit crawler, uses it.
+```sh
+cd path/to/your-website
+agenticseo init --domain example.com --location US
+agenticseo keywords "seo audit" "seo audit tool"
+agenticseo audit start --wait
+agenticseo audit issues
+agenticseo overview
+```
 
-Every command prints one JSON document on stdout when it succeeds. Failures print a message on stderr, followed by the provider's own response when there is one, and exit with a code an agent can branch on:
+Every command prints JSON. For example, `keywords` returns:
 
-| Exit | Meaning |
-| --- | --- |
-| 0 | Success |
-| 1 | Unexpected failure (a bug); stderr has the stack |
-| 2 | Invalid input: arguments, missing project, or an invalid `.agenticseo` file |
-| 3 | Missing or rejected credentials |
-| 4 | Provider failure: network, HTTP error, provider status or unexpected payload; charged failures include the cost |
+```json
+{
+  "provider": "DataForSEO",
+  "market": { "locationCode": 2840, "languageCode": "en" },
+  "rows": [
+    { "keyword": "seo audit", "searchVolume": 4400, "cpc": 16.06, "keywordDifficulty": 77, "intent": "commercial" },
+    { "keyword": "seo audit tool", "searchVolume": 2400, "cpc": 23.77, "keywordDifficulty": 77, "intent": "commercial" }
+  ],
+  "costUsd": 0.01224,
+  "evidence": ".agenticseo/evidence/2026-09-25T03-30-58.479Z-….json"
+}
+```
 
-The [project setup skill](.agents/skills/seo-project-setup/SKILL.md) interviews the user and fills the project context. The [report skill](.agents/skills/seo-report/SKILL.md) saves a finding as a report. The [keyword research skill](.agents/skills/keyword-research/SKILL.md), adapted from OpenSEO's, turns seeds into a prioritized opportunity set. The [SEO audit skill](.agents/skills/seo-audit/SKILL.md) combines a crawl with live research into a few prioritized recommendations. [Keyword clustering](.agents/skills/keyword-clustering/SKILL.md), [competitor analysis](.agents/skills/competitor-analysis/SKILL.md), [competitive landscape](.agents/skills/competitive-landscape/SKILL.md), [local SEO](.agents/skills/local-seo/SKILL.md), [link prospecting](.agents/skills/link-prospecting/SKILL.md) and the [SEO coach](.agents/skills/seo-coach/SKILL.md) complete OpenSEO's set of workflow skills, all adapted from OpenSEO and delivered through the report skill. Run Pi in this repository to discover the skills, or install it into your own agent using its skill manager. Run `npm run check` for the fixture-backed tests. No live DataForSEO call is part of the test suite.
+A metric the provider does not have is `null`, never 0. The [command reference](docs/commands.md) covers every command and option.
 
-A local invocation may still call paid external services, including DataForSEO. Google Search Console and Analytics require authorization. Remote execution is optional for long or unattended jobs, not a prerequisite for normal CLI use.
+## Where your data lives
 
-## Google Search Console and Analytics
+AgenticSEO keeps everything for a site in a `.agenticseo/` folder inside it:
 
-Google data is read with your own OAuth client, because AgenticSEO has no hosted app. One-time setup in the [Google Cloud console](https://console.cloud.google.com/):
+| Path | What it holds | In Git? |
+| --- | --- | --- |
+| `project.json` | Domain, market, and which Search Console and Analytics property to use | Your choice |
+| `context.json` | What your agent knows about the business: goals, positioning, competitors, key pages and a research log | Your choice |
+| `reports/` | Finished reports (Markdown and HTML) | Your choice |
+| `exports/` | CSV and JSON exports | Your choice |
+| `evidence/` | The raw provider response behind every paid result | Ignored |
+| `data/` | A SQLite database of saved keywords, audits and ranking history | Ignored |
+| `cache/` | Cached lookups, so repeating a question is free | Ignored |
 
-1. Create a project and enable the Google Search Console API, the Google Analytics Data API and the Google Analytics Admin API.
-2. Configure the OAuth consent screen as External. Add the scopes `webmasters.readonly` and `analytics.readonly`, and add yourself as a test user. Publish the app to Production: Google then shows an "unverified app" warning you can accept for your own use. In Testing mode it expires the grant every seven days.
-3. Create an OAuth client ID of type Desktop app, and set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` when you run `agenticseo google connect`. The pair is stored with the grant, because Google needs it to refresh access; Google does not treat a Desktop client's secret as confidential.
+Google access tokens are stored per user in `~/.config/agenticseo/`, never in a project. Behind a proxy, set `HTTPS_PROXY` as you would for curl; every request uses it.
 
-## Origin and license
+## Documentation
 
-AgenticSEO is an independent project based on the product and source design of [OpenSEO](https://github.com/every-app/open-seo). It is not an official OpenSEO release or affiliated with its maintainers. OpenSEO is MIT-licensed; source ported from OpenSEO lives in `src/openseo/`, names its upstream file and commit, and keeps OpenSEO's notice in [LICENSES/OpenSEO.txt](LICENSES/OpenSEO.txt). New code in this repository is licensed under [MIT](LICENSE). The names AgenticSEO and OpenSEO refer to separate projects.
+- [Skills](docs/skills.md): the ten workflows and when to use each
+- [Command reference](docs/commands.md): every command, option and exit code
+- [Google Search Console and Analytics setup](docs/google.md)
+- [Contributing](CONTRIBUTING.md), [design](docs/DESIGN.md), [OpenSEO parity](docs/openseo-parity.md) and [security](SECURITY.md)
+
+## License
+
+MIT. AgenticSEO includes source adapted from OpenSEO (MIT, Copyright (c) 2026 Ben Senescu). Each adapted file names its origin, and OpenSEO's notice is kept in [LICENSES/OpenSEO.txt](LICENSES/OpenSEO.txt). AgenticSEO is not affiliated with OpenSEO's maintainers.
