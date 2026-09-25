@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
+  <!-- Source for social-preview.png (GitHub social preview and README banner). Re-render after editing; see CONTRIBUTING.md. -->
+  <style>
+    .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  </style>
+  <rect width="1280" height="640" fill="#0a0a0a"/>
+
+  <text x="80" y="150" class="sans" font-size="84" font-weight="700" fill="#fafafa" letter-spacing="-2">AgenticSEO</text>
+  <text x="80" y="215" class="sans" font-size="36" fill="#d4d4d4">SEO research and site audits</text>
+  <text x="80" y="262" class="sans" font-size="36" fill="#d4d4d4">for your coding agent.</text>
+
+  <g class="sans" font-size="24" fill="#a3a3a3">
+    <text x="106" y="345">10 agent skills + a local CLI</text>
+    <text x="106" y="385">Runs on your machine, no server</text>
+    <text x="106" y="425">Pay providers per lookup</text>
+    <text x="106" y="465">Reports saved in your repo</text>
+  </g>
+  <g fill="#4ade80">
+    <circle cx="86" cy="337" r="5"/><circle cx="86" cy="377" r="5"/>
+    <circle cx="86" cy="417" r="5"/><circle cx="86" cy="457" r="5"/>
+  </g>
+
+  <g transform="translate(640 110)">
+    <rect width="560" height="400" rx="14" fill="#171717" stroke="#2e2e2e"/>
+    <circle cx="28" cy="28" r="7" fill="#3f3f3f"/><circle cx="52" cy="28" r="7" fill="#3f3f3f"/><circle cx="76" cy="28" r="7" fill="#3f3f3f"/>
+    <g class="mono" font-size="21">
+      <text x="32" y="100" fill="#fafafa"><tspan fill="#4ade80">&gt;</tspan> Audit my site and tell me</text>
+      <text x="58" y="130" fill="#fafafa">what to fix first</text>
+      <text x="32" y="190" fill="#737373">$ agenticseo audit start</text>
+      <text x="32" y="222" fill="#737373">$ agenticseo gsc report</text>
+      <text x="32" y="254" fill="#737373">$ agenticseo keywords …</text>
+      <text x="32" y="286" fill="#737373">$ agenticseo serp …</text>
+      <text x="32" y="350" fill="#4ade80">✓ <tspan fill="#fafafa">reports/site-audit.html</tspan></text>
+    </g>
+  </g>
+
+  <text x="80" y="580" class="mono" font-size="22" fill="#737373">github.com/kid7st/agenticseo</text>
+</svg>

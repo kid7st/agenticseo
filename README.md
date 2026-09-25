@@ -1,83 +1,83 @@
+<p align="center">
+  <img src="docs/assets/social-preview.png" alt="AgenticSEO: SEO research and site audits for your coding agent" width="820">
+</p>
+
+<p align="center">
+  <a href="https://github.com/kid7st/agenticseo/releases/latest"><img src="https://img.shields.io/github/v/release/kid7st/agenticseo" alt="Latest release"></a>
+  <a href="https://github.com/kid7st/agenticseo/actions/workflows/ci.yml"><img src="https://github.com/kid7st/agenticseo/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/kid7st/agenticseo" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/node-%E2%89%A524.14-339933" alt="Node.js 24.14 or newer">
+</p>
+
 # AgenticSEO
 
-SEO research and site audits for your coding agent. AgenticSEO gives an agent such as Pi or Claude Code a command-line toolkit and ten ready-made SEO workflows. Ask your agent to audit your site, find keywords worth targeting, study a competitor or check your Google Maps visibility. It gathers the data, explains what matters, and saves a report in your project.
+**SEO research and site audits for your coding agent.**
 
-It runs on your machine. There is no account to create and no server to keep running. You pay the data providers directly, per lookup, and everything the agent finds stays in your website's folder.
+AgenticSEO gives an agent such as Pi or Claude Code a command-line toolkit and ten ready-made SEO workflows ([Agent Skills](https://agentskills.io)). Ask it to audit your site, find keywords worth targeting, study a competitor or check your Google Maps visibility. It gathers the data, explains what matters, and saves a report in your project.
 
-AgenticSEO is based on [OpenSEO](https://github.com/every-app/open-seo) and brings its SEO features to local commands and agent skills. It is an independent project, not an official OpenSEO release.
+- **Local.** Runs on your machine. No account, no server, no MCP connection.
+- **Pay per lookup.** You pay data providers directly, usually a few cents per lookup. Site audits are free.
+- **Evidence you keep.** Every paid result reports its cost and saves the raw data in your website's folder.
 
-## What you can do
+AgenticSEO brings the SEO features of [OpenSEO](https://github.com/every-app/open-seo) to local commands and agent skills. It is an independent project, not an official OpenSEO release.
 
-| Ask your agent to… | What it uses |
-| --- | --- |
-| Audit my site and tell me what to fix first | A local crawler (free), optional Lighthouse checks, live rankings |
-| Find keywords worth targeting for these topics | Keyword research, search volume, difficulty, intent and live Google results |
-| Group my keywords and map them to pages | Search Console queries, SERP overlap, your key pages |
-| Analyze a competitor, or who wins in my market | Ranked keywords, top pages, backlinks, SERP competitors, AI answer mentions |
-| Check how I show up on Google Maps | Business profiles, reviews, local results and a rank grid around your location |
-| Find sites that might link to my guide | SERPs and competitors' backlinks, plus your agent's web search for contacts |
-| Track my rankings every week | Rank trackers, run on demand or by your system scheduler |
-| Show what already ranks and what visitors do | Your own Google Search Console and Google Analytics data (free) |
-
-Each workflow ends with a report: a Markdown file your agent can read later and an HTML page you can open, share or print.
-
-## Install
+## Quick start
 
 Requires [Node.js](https://nodejs.org) 24.14 or newer.
+
+**1. Install the CLI.** Run the same command again to update.
 
 ```sh
 npm install -g https://github.com/kid7st/agenticseo/releases/latest/download/agenticseo.tgz
 ```
 
-Run the same command again to update.
-
-Then give your agent the skills. They are included in the package:
+**2. Add the skills to your agent.** The [skills](https://github.com/vercel-labs/skills) installer asks which agents to add them to (Pi, Claude Code, Codex, Cursor and many more). Run it again after updating the CLI.
 
 ```sh
-mkdir -p ~/.agents/skills
-ln -s "$(npm root -g)"/agenticseo/.agents/skills/* ~/.agents/skills/
+npx skills add "$(npm root -g)/agenticseo" -g
 ```
 
-`~/.agents/skills` works for Pi and other [Agent Skills](https://agentskills.io) clients. For Claude Code, link them into `~/.claude/skills` instead. So far AgenticSEO has only been tested with Pi. See [skills](docs/skills.md) for what each skill does.
-
-## Accounts you need
-
-| Service | Needed for | Cost |
-| --- | --- | --- |
-| [DataForSEO](https://dataforseo.com) | Keywords, SERPs, competitors, backlinks, local SEO, AI visibility, rank tracking, Lighthouse | Pay per lookup, usually $0.001–$0.08; an AI brand lookup is about $0.60–$0.85 |
-| Google Search Console and Analytics | Your site's own clicks, queries and visitor behavior | Free; needs a one-time [Google setup](docs/google.md) |
-| [Ahrefs](https://ahrefs.com) (optional) | Ahrefs Domain Rating | Free API key |
-
-Site audits run on your machine and cost nothing. To give an idea of scale, one complete workflow, such as clustering a site's keywords or mapping a competitive landscape, cost between $0.05 and $0.65 in our tests. Every paid result reports what it cost.
-
-Set your DataForSEO credentials in your shell. The key is your DataForSEO `login:password` encoded in base64:
+**3. Add a [DataForSEO](https://dataforseo.com) key** to your shell. It is your DataForSEO `login:password` in base64:
 
 ```sh
 export DATAFORSEO_API_KEY="$(printf 'you@example.com:your-api-password' | base64)"
 ```
 
-Keys live in your environment and never go into project files.
-
-## Get started
-
-Open your agent in your website's folder and ask:
+**4. Open your agent in your website's folder and ask:**
 
 > Set up SEO for this site.
 
-The `seo-project-setup` skill asks about your business, goals and competitors, and connects Google if you want. Not sure where to start? Ask for the `seo-coach` instead.
+The `seo-project-setup` skill asks about your business, goals and competitors, and connects Google Search Console if you want. Not sure what to do next? Ask for the `seo-coach`.
 
-You can also run the commands yourself:
+So far AgenticSEO has been tested with Pi. If you use another agent, please [tell us how it went](https://github.com/kid7st/agenticseo/issues).
 
-```sh
-cd path/to/your-website
-agenticseo init --domain example.com --location US
-agenticseo keywords "seo audit" "seo audit tool"
-agenticseo audit start --wait
-agenticseo audit issues
-agenticseo overview
+## What you can ask
+
+| Ask your agent to… | Skill | Cost in our tests |
+| --- | --- | --- |
+| Audit my site and tell me what to fix first | `seo-audit` | $0.17 (the crawl is free) |
+| Find keywords worth targeting for these topics | `keyword-research` | under $0.30 |
+| Group my keywords and map them to pages | `keyword-clustering` | $0.05 |
+| Analyze this competitor | `competitor-analysis` | $0.20 |
+| Show who wins my search market and where the openings are | `competitive-landscape` | $0.65 |
+| Check how I show up on Google Maps | `local-seo` | $0.13 |
+| Find sites that might link to my guide | `link-prospecting` | $0.19 |
+
+Each workflow ends with a report: a Markdown file your agent can read later and an HTML page you can open, share or print. Costs are what DataForSEO charged in one test run; you can set a budget in your request ("keep it under $0.50"). See [skills](docs/skills.md) for details.
+
+The CLI also tracks keyword rankings on demand or on a schedule, and shows your own Search Console and Analytics data for free.
+
+## How it works
+
+```
+ you ──ask──▶ your agent ──reads──▶ skill (the workflow)
+                  │
+                  └──runs──▶ agenticseo CLI ──▶ DataForSEO · Google Search Console · Analytics · local crawler
+                                   │
+                                   └──▶ .agenticseo/  results, raw evidence, reports
 ```
 
-Every command prints JSON. For example, `keywords` returns:
+Skills tell the agent what to ask you, which commands to run and how to read the results. The CLI does the data work and prints JSON. For example, `agenticseo keywords "seo audit" "seo audit tool"` returns:
 
 ```json
 {
@@ -92,11 +92,21 @@ Every command prints JSON. For example, `keywords` returns:
 }
 ```
 
-A metric the provider does not have is `null`, never 0. The [command reference](docs/commands.md) covers every command and option.
+A metric the provider does not have is `null`, never 0. You can run every command yourself; the [command reference](docs/commands.md) covers them all.
+
+## Accounts and costs
+
+| Service | Needed for | Cost |
+| --- | --- | --- |
+| [DataForSEO](https://dataforseo.com) | Keywords, SERPs, competitors, backlinks, local SEO, AI visibility, rank tracking, Lighthouse | Pay per lookup, usually $0.001–$0.08; an AI brand lookup is about $0.60–$0.85 |
+| Google Search Console and Analytics | Your site's own clicks, queries and visitor behavior | Free; needs a one-time [Google setup](docs/google.md) |
+| [Ahrefs](https://ahrefs.com) (optional) | Ahrefs Domain Rating | Free API key |
+
+Keys live in your environment and never go into project files. Repeated lookups come from a local cache and cost nothing.
 
 ## Where your data lives
 
-AgenticSEO keeps everything for a site in a `.agenticseo/` folder inside it:
+Everything for a site stays in a `.agenticseo/` folder inside it:
 
 | Path | What it holds | In Git? |
 | --- | --- | --- |
@@ -106,13 +116,13 @@ AgenticSEO keeps everything for a site in a `.agenticseo/` folder inside it:
 | `exports/` | CSV and JSON exports | Your choice |
 | `evidence/` | The raw provider response behind every paid result | Ignored |
 | `data/` | A SQLite database of saved keywords, audits and ranking history | Ignored |
-| `cache/` | Cached lookups, so repeating a question is free | Ignored |
+| `cache/` | Cached lookups | Ignored |
 
-Google access tokens are stored per user in `~/.config/agenticseo/`, never in a project. Behind a proxy, set `HTTPS_PROXY` as you would for curl; every request uses it.
+Google access tokens are stored per user in `~/.config/agenticseo/`, never in a project. Behind a proxy, set `HTTPS_PROXY` as you would for curl.
 
 ## Documentation
 
-- [Skills](docs/skills.md): the ten workflows and when to use each
+- [Skills](docs/skills.md): the ten workflows, how to install them and how reports work
 - [Command reference](docs/commands.md): every command, option and exit code
 - [Google Search Console and Analytics setup](docs/google.md)
 - [Contributing](CONTRIBUTING.md), [design](docs/DESIGN.md), [OpenSEO parity](docs/openseo-parity.md) and [security](SECURITY.md)

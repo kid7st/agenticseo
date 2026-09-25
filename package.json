@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Open-source, local-first SEO for agents: OpenSEO's SEO capabilities as a CLI and agent skills.",
+  "description": "SEO research and site audits for your coding agent: 10 agent skills and a local CLI for keyword research, competitors, backlinks, local SEO and rank tracking.",
   "license": "MIT",
   "repository": {
     "type": "git",

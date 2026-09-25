@@ -24,6 +24,15 @@ Keep changes focused, add the smallest relevant regression check, and update [do
 
 CI runs the same checks across supported Node versions, installs a packed CLI, and runs CodeQL. A green PR is ready for maintainer review; it is not permission to merge. Maintainers make the final merge decision. Security issues should be reported privately using [SECURITY.md](SECURITY.md), not filed as public issues.
 
+## Social preview
+
+`docs/assets/social-preview.png` is the README banner and the image GitHub shows when the repository link is shared. After editing its source, `social-preview.svg`, render it again and upload the PNG under **Settings → General → Social preview**:
+
+```sh
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --hide-scrollbars \
+  --window-size=1280,640 --screenshot=docs/assets/social-preview.png "file://$PWD/docs/assets/social-preview.svg"
+```
+
 ## Releases
 
 Set the new `version` in `package.json` through a PR, then push a matching tag (`v0.2.0`) on `main`. The release workflow runs the checks, packs the CLI and publishes a GitHub release with `agenticseo-<version>.tgz` and `agenticseo.tgz`; the second name is what the install command's `releases/latest` link resolves. The package is not published to the npm registry.
