@@ -3,7 +3,8 @@
 // Copyright (c) 2026 Ben Senescu. MIT License; see LICENSES/OpenSEO.txt.
 // Local changes: a client ledger and file cache replace the billing customer and
 // R2; organization and project ids leave the cache key; the cache write is
-// awaited.
+// awaited. Include terms match any term (one OR group), like backlinks,
+// instead of requiring every term.
 import { z } from "zod";
 import { buildCacheKey, type Cache } from "../cache.js";
 import type { DataforseoClient } from "../dataforseo/client.js";
@@ -13,7 +14,7 @@ import {
   buildRelevantPagesScopeFilter,
   type ScopeFilter,
 } from "../dataforseo/researchScopeFilters.js";
-import { assertFilterConditionBudget } from "../dataforseo/filters.js";
+import { assertFilterConditionBudget, buildIncludeOrGroup } from "../dataforseo/filters.js";
 import type { ResearchScope } from "../researchScope.js";
 import { computeHasMore } from "./pagination.js";
 import type { DomainKeywordsFilters } from "./domainKeywordFilters.js";
@@ -87,9 +88,8 @@ function buildPageFilters(
 ): unknown[] {
   const conditions: unknown[][] = [];
 
-  for (const term of parseTerms(filters.include)) {
-    conditions.push(["page_address", "ilike", `%${escapeLikeTerm(term)}%`]);
-  }
+  const includeGroup = buildIncludeOrGroup("page_address", filters.include);
+  if (includeGroup) conditions.push(includeGroup.clause);
   for (const term of parseTerms(filters.exclude)) {
     conditions.push(["page_address", "not_ilike", `%${escapeLikeTerm(term)}%`]);
   }
@@ -112,7 +112,9 @@ function buildPageFilters(
     conditions.push(["page_address", "ilike", `%${escapeLikeTerm(trimmed)}%`]);
   }
 
-  assertFilterConditionBudget(scopeFilter.conditionCount + conditions.length);
+  assertFilterConditionBudget(
+    scopeFilter.conditionCount + conditions.length + (includeGroup ? includeGroup.conditionCount - 1 : 0),
+  );
 
   const expressions: unknown[] = [];
   for (const condition of [...scopeFilter.clauses, ...conditions]) {

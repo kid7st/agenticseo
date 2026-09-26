@@ -124,8 +124,8 @@ export function recordBatch(
        og_title, og_description, og_image, h1_count, h2_count, h3_count, h4_count, h5_count, h6_count,
        heading_order_json, word_count, images_total, images_missing_alt, images_json, internal_link_count,
        external_link_count, has_structured_data, hreflang_tags_json, is_indexable, x_robots_tag,
-       header_canonical_url, crawl_depth, in_sitemap, content_hash, fetch_class, response_time_ms
-     ) VALUES (${Array(35).fill("?").join(", ")})`,
+       header_canonical_url, crawl_depth, in_sitemap, content_hash, fetch_class, response_time_ms, is_html
+     ) VALUES (${Array(36).fill("?").join(", ")})`,
   );
   const crawled = db.prepare(`UPDATE audit_frontier SET state = 'crawled' WHERE audit_id = ? AND url = ?`);
   for (const page of input.pages) {
@@ -136,6 +136,7 @@ export function recordBatch(
       page.links.filter((link) => link.isInternal).length, page.links.filter((link) => !link.isInternal).length,
       page.hasStructuredData ? 1 : 0, JSON.stringify(page.hreflangTags), page.isIndexable ? 1 : 0, page.xRobotsTag,
       page.headerCanonicalUrl, page.crawlDepth, page.inSitemap ? 1 : 0, page.contentHash, page.fetchClass, page.responseTimeMs,
+      page.isHtml ? 1 : 0,
     );
     crawled.run(auditId, page.url);
   }

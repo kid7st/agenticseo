@@ -1,6 +1,8 @@
 // Ported from OpenSEO src/server/lib/audit/url-utils.ts at commit
 // 0ffff93101043aad7600a3b6a499a0cd2887ef49.
 // Copyright (c) 2026 Ben Senescu. MIT License; see LICENSES/OpenSEO.txt.
+// Local changes: detectUrlTemplate is not ported; the Lighthouse sample groups
+// pages by site section instead.
 /**
  * URL normalization and utility functions for the site audit crawler.
  */
@@ -117,40 +119,6 @@ export function isSameOrigin(url: string, origin: string): boolean {
   } catch {
     return false;
   }
-}
-
-/**
- * Detect a URL template pattern by replacing path segments that look like
- * dynamic values (IDs, slugs, dates) with `:param`.
- *
- * Examples:
- *   /blog/my-great-post      → /blog/:slug
- *   /products/12345           → /products/:id
- *   /users/john-doe/settings  → /users/:slug/settings
- */
-export function detectUrlTemplate(pathname: string): string {
-  const segments = pathname.split("/").filter(Boolean);
-
-  const normalized = segments.map((segment) => {
-    // Pure numeric IDs
-    if (/^\d+$/.test(segment)) return ":id";
-    // UUIDs
-    if (
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-        segment,
-      )
-    )
-      return ":uuid";
-    // Date-like segments (2024-01-15)
-    if (/^\d{4}-\d{2}-\d{2}$/.test(segment)) return ":date";
-    // Slug-like: contains hyphens and is more than 2 segments (to avoid short
-    // path parts like "my-account" that are likely fixed routes)
-    if (segment.includes("-") && segment.split("-").length > 2) return ":slug";
-
-    return segment;
-  });
-
-  return "/" + normalized.join("/");
 }
 
 /**

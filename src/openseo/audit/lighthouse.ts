@@ -4,8 +4,10 @@
 // Local changes: calls go through the local ledger client and carry their cost;
 // the compact payload is stored with the result row instead of in R2, so
 // storeLighthouseResult is not ported; a credentials error stops the audit
-// instead of being recorded as a failed check; nothing is logged.
-import { detectUrlTemplate, canonicalUrlKey } from "./url-utils.js";
+// instead of being recorded as a failed check; nothing is logged. The sample
+// groups pages by site section instead of URL template and skips non-HTML pages
+// (see selectLighthouseSample).
+import { canonicalUrlKey } from "./url-utils.js";
 import { OperationError } from "../../errors.js";
 import { createDataforseoClient, ledgerCost, type ProviderCall } from "../dataforseo/client.js";
 import { DataforseoChargedTaskError } from "../dataforseo/envelope.js";
@@ -14,6 +16,7 @@ import type { LighthouseResult, LighthouseStrategy } from "./types.js";
 interface LighthouseSamplePage {
   url: string;
   statusCode: number;
+  isHtml: boolean;
 }
 
 function canonicalUrlKeyWithoutTrailingSlash(url: string): string {
@@ -98,7 +101,15 @@ export async function fetchLighthouseResult(
 }
 
 /**
- * Select which pages to run Lighthouse on, based on the chosen strategy.
+ * Select which pages to run Lighthouse on: the start page plus one page per site
+ * section, largest sections first, at most ten pages.
+ *
+ * A section is the first path segment plus the path depth, so /blog/a/ and
+ * /blog/b/ share one, /blog/tags/aws/ is another and /docs/cli/ a third. Upstream
+ * grouped by URL template, which treats every one-word slug (/blog/tags/aws/,
+ * /blog/tags/deploy/) as its own template, so one section of short slugs could
+ * fill the whole sample. Only HTML pages count: Lighthouse cannot audit a
+ * Markdown, XML or text file, and DataForSEO still bills the attempt.
  */
 export function selectLighthouseSample(
   pages: LighthouseSamplePage[],
@@ -107,12 +118,10 @@ export function selectLighthouseSample(
 ): string[] {
   if (strategy === "none") return [];
 
-  // Only consider pages that loaded successfully
   const validPages = pages.filter(
-    (p) => p.statusCode >= 200 && p.statusCode < 300,
+    (p) => p.isHtml && p.statusCode >= 200 && p.statusCode < 300,
   );
 
-  // strategy === "auto": homepage + 1 per URL pattern, capped at 10
   const selected = new Set<string>();
 
   // Always include the start URL / homepage. Prefer an exact canonical match
@@ -128,27 +137,27 @@ export function selectLighthouseSample(
     );
   if (startPage) selected.add(startPage.url);
 
-  // Group by URL template pattern
-  const templateGroups = new Map<string, LighthouseSamplePage>();
-  if (startPage) {
-    templateGroups.set(
-      detectUrlTemplate(new URL(startPage.url).pathname),
-      startPage,
-    );
-  }
+  const sections = new Map<string, LighthouseSamplePage[]>();
   for (const page of validPages) {
-    if (selected.has(page.url)) continue;
-    const template = detectUrlTemplate(new URL(page.url).pathname);
-    if (!templateGroups.has(template)) {
-      templateGroups.set(template, page);
-    }
+    const key = sectionKey(page.url);
+    const section = sections.get(key);
+    if (section) section.push(page);
+    else sections.set(key, [page]);
   }
+  if (startPage) sections.delete(sectionKey(startPage.url));
 
-  // Add one page per template group
-  for (const [, page] of templateGroups) {
+  // Stable sort: equal-sized sections keep crawl order, and each section's
+  // first page is the shallowest one the crawl reached.
+  const bySize = [...sections.values()].sort((a, b) => b.length - a.length);
+  for (const [first] of bySize) {
     if (selected.size >= 10) break;
-    selected.add(page.url);
+    selected.add(first.url);
   }
 
   return Array.from(selected);
+}
+
+function sectionKey(url: string): string {
+  const segments = new URL(url).pathname.split("/").filter(Boolean);
+  return `${segments[0] ?? ""}/${segments.length}`;
 }

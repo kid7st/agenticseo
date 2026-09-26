@@ -138,7 +138,7 @@ export interface CrawledPageResult {
   /**
    * True when an HTML document was fetched and analyzed. Gates the content
    * checks in page reporters (an empty-shell HTML page must still be
-   * checked; a PDF must not). Transient — not persisted.
+   * checked; a PDF must not). Stored so the Lighthouse sample picks only HTML.
    */
   isHtml: boolean;
   /**

@@ -2,9 +2,11 @@
 // 0ffff93101043aad7600a3b6a499a0cd2887ef49.
 // Copyright (c) 2026 Ben Senescu. MIT License; see LICENSES/OpenSEO.txt.
 // Local changes: DomainKeywordsFilters is defined here instead of in the app's
-// request schema, which this CLI does not port.
+// request schema, which this CLI does not port. Include terms match any term
+// (one OR group), like backlinks, instead of requiring every term.
 import {
   assertFilterConditionBudget,
+  buildIncludeOrGroup,
   collectNumericRange,
   escapeLikeTerm,
   joinClauses,
@@ -53,7 +55,8 @@ export function buildOrderBy(
 }
 
 /**
- * Each include/exclude term is one ilike clause; numeric ranges add one per
+ * Include terms form one OR group (a keyword matches any of them); each
+ * exclude term is one not_ilike clause; numeric ranges add one per
  * bound; the free-text search term adds one OR-group of two (keyword OR url).
  * Scope clauses (research scope narrowing) are ANDed in front and consume
  * part of the same budget. The client surfaces the same condition count and
@@ -66,13 +69,8 @@ export function buildKeywordFilters(
 ): unknown[] {
   const conditions: FilterClause[] = [];
 
-  for (const term of parseFilterTerms(filters.include)) {
-    conditions.push([
-      "keyword_data.keyword",
-      "ilike",
-      `%${escapeLikeTerm(term)}%`,
-    ]);
-  }
+  const includeGroup = buildIncludeOrGroup("keyword_data.keyword", filters.include);
+  if (includeGroup) conditions.push(includeGroup.clause);
   for (const term of parseFilterTerms(filters.exclude)) {
     conditions.push([
       "keyword_data.keyword",
@@ -115,11 +113,12 @@ export function buildKeywordFilters(
   const trimmedSearch = searchTerm?.trim();
   const searchGroup = trimmedSearch ? buildSearchGroup(trimmedSearch) : null;
 
-  // The search OR-group costs 2 slots; scope clauses cost their reported
-  // count; everything else is 1.
+  // The OR groups cost one slot per term (search: 2); scope clauses cost their
+  // reported count; everything else is 1.
   assertFilterConditionBudget(
     (scopeFilter?.conditionCount ?? 0) +
       conditions.length +
+      (includeGroup ? includeGroup.conditionCount - 1 : 0) +
       (searchGroup ? 2 : 0),
   );
 

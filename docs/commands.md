@@ -83,9 +83,9 @@ A `TARGET` is a domain or URL. `--scope` narrows it: `subdomains` (the default f
 - `--sort` orders by rank, volume, traffic or CPC; `--limit` (default 50) and `--offset` page through, with `totalCount` and `nextOffset` in the result.
 - `ranked TARGET --sort traffic_estimate --limit 100` gives the keywords that bring a site the most traffic.
 
-**`domain-keywords TARGET`** covers the same data with finer filters: `--include`/`--exclude` terms, `--search` (keyword or URL), and ranges for traffic, volume, CPC, difficulty and rank. `--sort traffic|volume|rank|score|cpc` (`score` is difficulty), `--page`/`--page-size`. DataForSEO accepts at most eight filter conditions per request. Cached for 12 hours.
+**`domain-keywords TARGET`** covers the same data with finer filters: `--include a,b` keeps keywords containing any of the terms, `--exclude a,b` drops keywords containing any of them, `--search` (keyword or URL), and ranges for traffic, volume, CPC, difficulty and rank. `--sort traffic|volume|rank|score|cpc` (`score` is difficulty), `--page`/`--page-size`. DataForSEO accepts at most eight filter conditions per request. Cached for 12 hours.
 
-**`pages TARGET`** lists a site's pages by organic traffic or number of ranking keywords, with URL-term, traffic and keyword-count filters. Cached for 12 hours.
+**`pages TARGET`** lists a site's pages by organic traffic or number of ranking keywords, with URL-term (`--include` any, `--exclude` any), traffic and keyword-count filters. Cached for 12 hours.
 
 **`competitors KEYWORD...`** finds the domains that rank across up to 100 keywords, sorted by visibility. `--exclude-domains` leaves out your own site.
 
@@ -138,7 +138,7 @@ Reviews and posts are charged when requested and collected for free. If they are
 - `--max-pages` takes 10 to 10,000 (default 50).
 - Addresses on your own machine or network, such as `localhost:3000`, need `--allow-private`.
 - The audit runs in the background and the command returns its id at once. `--wait` runs it in the foreground instead.
-- `--lighthouse` also runs Google Lighthouse on mobile and desktop through DataForSEO for a sample: the start page plus one page per URL pattern, up to 10 pages. Each check costs about $0.005.
+- `--lighthouse` also runs Google Lighthouse on mobile and desktop through DataForSEO for a sample: the start page plus one HTML page from each site section (same first folder and depth, such as `/blog/*` or `/docs/*/*`), largest sections first, up to 10 pages. Each check costs about $0.005.
 
 After starting:
 - `audit status [ID]` shows progress, issue counts once finished, and the worker's log file.

@@ -3,6 +3,7 @@ import dns from "node:dns";
 import { createServer, type Server } from "node:http";
 import { after, before, describe, it } from "node:test";
 import { createCrawlThrottle } from "../src/openseo/audit/crawl-throttle.js";
+import { selectLighthouseSample } from "../src/openseo/audit/lighthouse.js";
 import { runPageReporters } from "../src/openseo/audit/issues/page-reporters.js";
 import { isCrawlableUrl, normalizeAndValidateStartUrl } from "../src/openseo/audit/url-policy.js";
 import { crawlPage } from "../src/openseo/workflows/site-audit-workflow-helpers.js";
@@ -35,6 +36,36 @@ describe("ported audit engine", () => {
     const issues = runPageReporters(page).map((issue) => issue.issueType).sort();
     // Upstream skips content checks such as thin-content on noindex pages.
     assert.deepEqual(issues, ["images-missing-alt", "missing-meta-description", "multiple-h1", "noindex-page", "title-too-short"]);
+  });
+});
+
+describe("Lighthouse sample", () => {
+  it("takes one HTML page per site section, largest sections first", () => {
+    const site = "https://example.com";
+    const html = (path: string) => ({ url: site + path, statusCode: 200, isHtml: true });
+    const pages = [
+      html("/"),
+      html("/blog/"),
+      html("/blog/first-post/"),
+      { url: `${site}/blog/first-post/index.md`, statusCode: 200, isHtml: false },
+      ...["aws", "deploy", "design", "github", "release", "tutorial", "webhooks", "cron", "slack"].map((tag) => html(`/blog/tags/${tag}/`)),
+      html("/blog/second-post/"),
+      html("/docs/cli/"),
+      html("/docs/deploy/"),
+      html("/docs/design/core/"),
+      { url: `${site}/docs/gone/`, statusCode: 404, isHtml: true },
+    ];
+    // Grouped by URL template, the nine tag pages each looked unique and filled
+    // the sample before any /docs page was reached.
+    assert.deepEqual(selectLighthouseSample(pages, `${site}/`, "auto"), [
+      `${site}/`,
+      `${site}/blog/tags/aws/`,
+      `${site}/blog/first-post/`,
+      `${site}/docs/cli/`,
+      `${site}/blog/`,
+      `${site}/docs/design/core/`,
+    ]);
+    assert.deepEqual(selectLighthouseSample(pages, `${site}/`, "none"), []);
   });
 });
 
