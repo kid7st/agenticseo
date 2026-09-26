@@ -1,6 +1,6 @@
 {
   "name": "agenticseo",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "SEO research and site audits for your coding agent: 10 agent skills and a local CLI for keyword research, competitors, backlinks, local SEO and rank tracking.",
