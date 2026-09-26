@@ -65,7 +65,8 @@ export async function getKeywordsPage(
   const orderBy = buildOrderBy(input.sortMode, input.sortOrder);
   const filters = buildKeywordFilters(input.filters, input.search, scopeFilter);
 
-  const cacheKey = await buildCacheKey("domain:keywords-page", {
+  // v2: include terms changed from all-of to any-of.
+  const cacheKey = await buildCacheKey("domain:keywords-page:v2", {
     domain: target.hostname,
     scope: target.scope,
     path: target.path,

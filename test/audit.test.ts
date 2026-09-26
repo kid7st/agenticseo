@@ -247,7 +247,7 @@ describe("site audit", () => {
       let status = await auditStatus(root, "lh");
       assert.equal(status.status, "failed");
       assert.equal(status.phase, "lighthouse");
-      // The start page and one page per URL template, mobile and desktop.
+      // The start page and one HTML page per site section, mobile and desktop.
       assert.deepEqual(status.lighthouse, { total: 8, completed: 4, failed: 0, costUsd: 0.017 });
 
       keyRejected = false;
