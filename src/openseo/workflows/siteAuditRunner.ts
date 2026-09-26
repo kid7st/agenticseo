@@ -261,18 +261,25 @@ async function persistCrawledPages(
 }
 
 /**
- * Lighthouse (mobile and desktop) on upstream's sample: the start page plus one
- * page per URL template, at most ten pages. Each stored result is a checkpoint, so
+ * Lighthouse (mobile and desktop) on a sample: the start page plus one HTML page
+ * per site section, at most ten pages (see selectLighthouseSample). Each stored result is a checkpoint, so
  * a resumed run pays only for the checks it has not stored.
  */
 async function runLighthousePhase(db: Store, auditId: string, owned: () => void) {
   const audit = readAudit(db, auditId);
-  const pages = db.prepare(`SELECT id, url, status_code FROM audit_pages WHERE audit_id = ? ORDER BY rowid`).all(auditId) as Array<{
+  const pages = db.prepare(`SELECT id, url, status_code, is_html FROM audit_pages WHERE audit_id = ? ORDER BY rowid`).all(auditId) as Array<{
     id: string;
     url: string;
     status_code: number | null;
+    is_html: number;
   }>;
-  const sample = new Set(selectLighthouseSample(pages.map((page) => ({ url: page.url, statusCode: page.status_code ?? 0 })), audit.start_url, "auto"));
+  const sample = new Set(
+    selectLighthouseSample(
+      pages.map((page) => ({ url: page.url, statusCode: page.status_code ?? 0, isHtml: page.is_html === 1 })),
+      audit.start_url,
+      "auto",
+    ),
+  );
   const checks = pages
     .filter((page) => sample.has(page.url))
     .flatMap((page) => (["mobile", "desktop"] as const).map((strategy) => ({ url: page.url, pageId: page.id, strategy })));

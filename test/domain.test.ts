@@ -189,6 +189,13 @@ test("domain keywords sends the app's keyword filters, search and paging, maps r
 
     const again = await withFetch(() => assert.fail("a cached page must not call DataForSEO"), () => domainKeywords(market, input));
     assert.deepEqual([again.result.cached, again.result.costUsd], [true, 0]);
+
+    const anyTerm = await withFetch(() => labs([item]), () => domainKeywords(market, { ...input, search: undefined, filters: { include: "seo, audit" } }));
+    assert.deepEqual(
+      JSON.stringify((anyTerm.requests[0].body as Array<Record<string, unknown>>)[0].filters),
+      JSON.stringify([[["keyword_data.keyword", "ilike", "%seo%"], "or", ["keyword_data.keyword", "ilike", "%audit%"]]]),
+      "include terms match any term, not all of them",
+    );
     await withFetch(() => assert.fail("must not call DataForSEO"), () => assert.rejects(
       domainKeywords(market, { ...input, page: 1, filters: { include: "a,b,c,d,e,f,g" } }),
       /Too many filter conditions \(9 of 8 max\)/,

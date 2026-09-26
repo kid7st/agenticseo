@@ -3,7 +3,8 @@
 // Copyright (c) 2026 Ben Senescu. MIT License; see LICENSES/OpenSEO.txt.
 // Local changes: a client ledger and file cache replace the billing customer and
 // R2; organization and project ids leave the cache key; the cache write is
-// awaited.
+// awaited. Include terms match any term (one OR group), like backlinks,
+// instead of requiring every term.
 import { z } from "zod";
 import { buildCacheKey, type Cache } from "../cache.js";
 import type { DataforseoClient } from "../dataforseo/client.js";
@@ -13,7 +14,12 @@ import {
   buildRelevantPagesScopeFilter,
   type ScopeFilter,
 } from "../dataforseo/researchScopeFilters.js";
-import { assertFilterConditionBudget } from "../dataforseo/filters.js";
+import {
+  assertFilterConditionBudget,
+  buildIncludeOrGroup,
+  escapeLikeTerm,
+  parseFilterTerms,
+} from "../dataforseo/filters.js";
 import type { ResearchScope } from "../researchScope.js";
 import { computeHasMore } from "./pagination.js";
 import type { DomainKeywordsFilters } from "./domainKeywordFilters.js";
@@ -48,10 +54,6 @@ const domainPagesPageResultSchema = z.object({
 
 type DomainPagesPageResult = z.infer<typeof domainPagesPageResultSchema>;
 
-function escapeLikeTerm(term: string): string {
-  return term.replace(/[\\%_]/g, (match) => `\\${match}`);
-}
-
 function pushAnd(filters: unknown[], expression: unknown[]) {
   if (filters.length > 0) filters.push("and");
   filters.push(expression);
@@ -71,15 +73,6 @@ function collectNumericRange(
   }
 }
 
-function parseTerms(value: string | undefined): string[] {
-  if (!value) return [];
-  return value
-    .toLowerCase()
-    .split(/[,+]/)
-    .map((term) => term.trim())
-    .filter(Boolean);
-}
-
 function buildPageFilters(
   filters: DomainKeywordsFilters,
   searchTerm: string | undefined,
@@ -87,10 +80,9 @@ function buildPageFilters(
 ): unknown[] {
   const conditions: unknown[][] = [];
 
-  for (const term of parseTerms(filters.include)) {
-    conditions.push(["page_address", "ilike", `%${escapeLikeTerm(term)}%`]);
-  }
-  for (const term of parseTerms(filters.exclude)) {
+  const includeGroup = buildIncludeOrGroup("page_address", filters.include);
+  if (includeGroup) conditions.push(includeGroup.clause);
+  for (const term of parseFilterTerms(filters.exclude)) {
     conditions.push(["page_address", "not_ilike", `%${escapeLikeTerm(term)}%`]);
   }
 
@@ -112,7 +104,9 @@ function buildPageFilters(
     conditions.push(["page_address", "ilike", `%${escapeLikeTerm(trimmed)}%`]);
   }
 
-  assertFilterConditionBudget(scopeFilter.conditionCount + conditions.length);
+  assertFilterConditionBudget(
+    scopeFilter.conditionCount + conditions.length + (includeGroup ? includeGroup.conditionCount - 1 : 0),
+  );
 
   const expressions: unknown[] = [];
   for (const condition of [...scopeFilter.clauses, ...conditions]) {
@@ -156,7 +150,8 @@ export async function getPagesPage(
   const orderBy = [`${SORT_FIELD_BY_MODE[input.sortMode]},${input.sortOrder}`];
   const filters = buildPageFilters(input.filters, input.search, scopeFilter);
 
-  const cacheKey = await buildCacheKey("domain:pages-page", {
+  // v2: include terms changed from all-of to any-of.
+  const cacheKey = await buildCacheKey("domain:pages-page:v2", {
     domain: target.hostname,
     scope: target.scope,
     path: target.path,

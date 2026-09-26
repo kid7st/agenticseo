@@ -242,6 +242,8 @@ const migrations = [
      lost_referring_domains INTEGER,
      captured_at TEXT NOT NULL
    );`,
+  // The Lighthouse sample may only pick HTML pages.
+  `ALTER TABLE audit_pages ADD COLUMN is_html INTEGER NOT NULL DEFAULT 0;`,
 ];
 
 export const databaseFile = (directory: string) => join(directory, "agenticseo.db");
