@@ -32,7 +32,7 @@
     "remeda": "^2.50.0",
     "robots-parser": "^3.0.1",
     "tldts": "^7.4.14",
-    "zod": "^4.1.12"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@types/node": "^24.10.3",
